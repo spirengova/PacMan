@@ -1,0 +1,20 @@
+<resources>
+    <!-- Application Name -->
+    <string name="app_name">PacMan</string>
+    <string name="app_logo">Pac-Man Logo</string>
+
+    <!-- Difficulty Levels Array -->
+    <string-array name="difficulty_levels">
+        <item>Easy</item>
+        <item>Medium</item>
+        <item>Hard</item>
+    </string-array>
+
+    <!-- Settings Screen Strings -->
+    <string name="settings_title">Settings</string>
+    <string name="volume_label">Volume</string>
+    <string name="difficulty_label">Difficulty Level</string>
+    <string name="level_label">Level</string>
+    <string name="attempt_label">Attempt</string>
+    <string name="lives_label">Lives</string>
+</resources> 
