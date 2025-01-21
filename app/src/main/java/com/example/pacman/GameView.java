@@ -667,7 +667,7 @@ public class GameView extends SurfaceView implements Runnable {
 
     private void resetPositions() {
         // Reset pozície Pacmana na štartovaciu pozíciu
-        float startX = (maze.getColumns() / 2) * scaleFactor;
+        float startX = ((float) maze.getColumns() / 2) * scaleFactor;
         float startY = (maze.getRows() - 2) * scaleFactor;
         pacman.setPosition(startX, startY);
         

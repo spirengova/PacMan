@@ -69,4 +69,4 @@ public class MenuActivity extends AppCompatActivity {
         hasSavedGame = getSharedPreferences("PacManPrefs", MODE_PRIVATE)
             .getBoolean("hasSavedGame", false);
     }
-} 
+}

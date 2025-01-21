@@ -37,4 +37,4 @@ public class MainActivity extends AppCompatActivity {
             gameView.resume();
         }
     }
-} 
+}
