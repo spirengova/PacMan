@@ -63,4 +63,6 @@ public class SettingsActivity extends AppCompatActivity {
             public void onNothingSelected(AdapterView<?> parent) {}
         });
     }
-} 
+}
+
+
