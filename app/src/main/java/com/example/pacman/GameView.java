@@ -93,6 +93,12 @@ public class GameView extends SurfaceView implements Runnable {
     private static final long MESSAGE_DURATION = 2000; // 2 sekundy
     private int lives = 3; // Počiatočný počet životov
 
+    // Pridať nové premenné pre zvuky
+    private int fruitEatenSound;
+    private int extraLifeSound;
+    private int powerUpSound;
+    private int deathSound;
+
     public GameView(Context context, int screenX, int screenY) {
         super(context);
         this.context = context;
@@ -160,11 +166,18 @@ public class GameView extends SurfaceView implements Runnable {
                 soundPool = new SoundPool(5, AudioManager.STREAM_MUSIC, 0);
             }
 
-            // Načítaj zvuky
-            try {
-                eatDotSound = soundPool.load(context, R.raw.eat_dot, 1);
-            } catch (Exception e) {
-                e.printStackTrace();
+            // Načítanie zvukov z raw priečinka
+            eatDotSound = soundPool.load(context, R.raw.eat_dot, 1);
+            fruitEatenSound = soundPool.load(context, R.raw.fruit_eaten, 1);
+            extraLifeSound = soundPool.load(context, R.raw.extra_life, 1);
+            powerUpSound = soundPool.load(context, R.raw.power_up, 1);
+            deathSound = soundPool.load(context, R.raw.death, 1);
+
+            // Inicializácia hudby na pozadí
+            backgroundMusic = MediaPlayer.create(context, R.raw.background_music);
+            backgroundMusic.setLooping(true);
+            if (preferences.getBoolean(SOUND_ENABLED, true)) {
+                backgroundMusic.start();
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -300,24 +313,23 @@ public class GameView extends SurfaceView implements Runnable {
     private void handleGhostCollision(Ghost ghost) {
         if (!ghost.isVulnerable() && !hasInvincibility) {
             lives--;
+            playSound(deathSound);
             if (lives <= 0) {
                 isGameOver = true;
                 isPaused = true;
             } else {
-                // Reset pozícií
                 resetPositions();
             }
         } else {
             ghost.handleEaten();
             score += hasDoublePoints ? 400 : 200;
-            playGhostEatenSound();
+            playSound(eatDotSound);
         }
     }
 
     private void drawScore() {
-        if (canvas != null) {
-            canvas.drawText("Score: " + score, 50, 50, scorePaint);
-        }
+        String scoreText = "Score: " + score;
+        canvas.drawText(scoreText, 20, 50, scorePaint);
     }
 
     @Override
@@ -791,16 +803,16 @@ public class GameView extends SurfaceView implements Runnable {
     }
 
     private void spawnNewFruit() {
-        // Nájdi voľné miesto pre ovocie
         int attempts = 0;
-        int maxAttempts = 10;
+        int maxAttempts = 20;  // Zvýšený počet pokusov
         
         while (attempts < maxAttempts) {
             int x = 1 + (int)(Math.random() * (maze.getColumns() - 2));
             int y = 1 + (int)(Math.random() * (maze.getRows() - 2));
             
-            if (!maze.isWall(x, y)) {
-                int fruitType = (int)(Math.random() * 4); // 0-3 pre rôzne typy ovocia
+            // Kontrola či je políčko dostupné pre Pacmana
+            if (!maze.isWall(x, y) && isAccessibleFromPacman(x, y)) {
+                int fruitType = (int)(Math.random() * 4);
                 float pixelX = x * scaleFactor + scaleFactor/2;
                 float pixelY = y * scaleFactor + scaleFactor/2;
                 
@@ -809,6 +821,35 @@ public class GameView extends SurfaceView implements Runnable {
             }
             attempts++;
         }
+    }
+
+    private boolean isAccessibleFromPacman(int x, int y) {
+        // Jednoduchý flood fill algoritmus pre kontrolu dostupnosti
+        boolean[][] visited = new boolean[maze.getColumns()][maze.getRows()];
+        return checkAccessibility(pacman.getGridX(), pacman.getGridY(), x, y, visited);
+    }
+
+    private boolean checkAccessibility(int startX, int startY, int targetX, int targetY, boolean[][] visited) {
+        // Ak sme mimo bludiska alebo na stene alebo už navštívené, vráť false
+        if (startX < 0 || startX >= maze.getColumns() || 
+            startY < 0 || startY >= maze.getRows() ||
+            maze.isWall(startX, startY) || visited[startX][startY]) {
+            return false;
+        }
+
+        // Ak sme našli cieľ, vráť true
+        if (startX == targetX && startY == targetY) {
+            return true;
+        }
+
+        // Označ ako navštívené
+        visited[startX][startY] = true;
+
+        // Skontroluj všetky smery
+        return checkAccessibility(startX + 1, startY, targetX, targetY, visited) ||
+               checkAccessibility(startX - 1, startY, targetX, targetY, visited) ||
+               checkAccessibility(startX, startY + 1, targetX, targetY, visited) ||
+               checkAccessibility(startX, startY - 1, targetX, targetY, visited);
     }
 
     private void checkFruitCollisions() {
@@ -834,18 +875,22 @@ public class GameView extends SurfaceView implements Runnable {
                 hasSpeedBoost = true;
                 pacman.setSpeedMultiplier(1.5f);
                 currentBoostMessage = "Speed Boost!";
+                playSound(powerUpSound);
                 break;
             case 1: // Invincibility
                 hasInvincibility = true;
                 currentBoostMessage = "Invincibility!";
+                playSound(powerUpSound);
                 break;
             case 2: // Extra life
                 lives++;
                 currentBoostMessage = "Extra Life!";
+                playSound(extraLifeSound);
                 break;
             case 3: // Double points
                 hasDoublePoints = true;
                 currentBoostMessage = "Double Points!";
+                playSound(powerUpSound);
                 break;
         }
     }
@@ -865,6 +910,16 @@ public class GameView extends SurfaceView implements Runnable {
 
     private void drawLives() {
         String livesText = "Lives: " + lives;
-        canvas.drawText(livesText, 20, 50, scorePaint);
+        canvas.drawText(livesText, 20, 100, scorePaint); // Posunuté nižšie pod skóre
+    }
+
+    private void playSound(int soundId) {
+        if (preferences.getBoolean(SOUND_ENABLED, true)) {
+            try {
+                soundPool.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
     }
 }
