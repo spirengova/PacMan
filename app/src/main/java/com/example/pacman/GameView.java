@@ -25,6 +25,7 @@ import android.graphics.Typeface;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Handler;
+import java.util.Iterator;
 
 public class GameView extends SurfaceView implements Runnable {
     private Thread gameThread;
@@ -78,6 +79,14 @@ public class GameView extends SurfaceView implements Runnable {
     private static final float BUTTON_SPACING = 20f;
     private float touchStartX, touchStartY;  // Pridané pre sledovanie swipe
     private static final float SWIPE_THRESHOLD = 50;  // Minimálna vzdialenosť pre swipe
+    private List<Fruit> fruits;
+    private static final int MAX_FRUITS = 2;
+    private static final long FRUIT_SPAWN_INTERVAL = 10000; // 10 sekúnd
+    private long lastFruitSpawnTime;
+    private boolean hasSpeedBoost = false;
+    private boolean hasInvincibility = false;
+    private boolean hasDoublePoints = false;
+    private long boostEndTime = 0;
 
     public GameView(Context context, int screenX, int screenY) {
         super(context);
@@ -116,6 +125,9 @@ public class GameView extends SurfaceView implements Runnable {
         initializeButtons();
 
         handler = new Handler();
+
+        fruits = new ArrayList<>();
+        lastFruitSpawnTime = System.currentTimeMillis();
 
         startGame();
     }
@@ -245,6 +257,15 @@ public class GameView extends SurfaceView implements Runnable {
                 isLevelComplete = true;
                 levelComplete();
             }
+
+            // Update fruits
+            updateFruits();
+            
+            // Kontrola kolízie s ovocím
+            checkFruitCollisions();
+            
+            // Kontrola boostov
+            checkBoosts();
         }
     }
 
@@ -263,11 +284,13 @@ public class GameView extends SurfaceView implements Runnable {
     }
 
     private void handleGhostCollision(Ghost ghost) {
-        if (!ghost.isVulnerable()) {
-            gameOver();
+        if (!ghost.isVulnerable() && !hasInvincibility) {
+            isGameOver = true;
+            isPaused = true;
+            drawGameOver();
         } else {
             ghost.handleEaten();
-            score += 200;
+            score += hasDoublePoints ? 400 : 200;
             playGhostEatenSound();
         }
     }
@@ -671,6 +694,12 @@ public class GameView extends SurfaceView implements Runnable {
                     canvas.translate(mapOffsetX, mapOffsetY);
 
                     maze.draw(canvas);
+                    
+                    // Draw fruits
+                    for (Fruit fruit : fruits) {
+                        fruit.draw(canvas);
+                    }
+                    
                     pacman.draw(canvas);
                     for (Ghost ghost : ghosts) {
                         ghost.draw(canvas);
@@ -678,7 +707,6 @@ public class GameView extends SurfaceView implements Runnable {
 
                     canvas.restore();
 
-                    // Vykresli len skóre a tlačidlá
                     drawScore();
                     drawButtons(canvas);
 
@@ -686,9 +714,7 @@ public class GameView extends SurfaceView implements Runnable {
                         drawGameOver();
                     }
                 } finally {
-                    if (canvas != null) {
-                        holder.unlockCanvasAndPost(canvas);
-                    }
+                    holder.unlockCanvasAndPost(canvas);
                 }
             }
         }
@@ -720,6 +746,84 @@ public class GameView extends SurfaceView implements Runnable {
                 ghost.resetPosition();
                 ghost.resetState();
             }
+        }
+    }
+
+    private void updateFruits() {
+        long currentTime = System.currentTimeMillis();
+        
+        // Spawn new fruit if needed
+        if (currentTime - lastFruitSpawnTime > FRUIT_SPAWN_INTERVAL && fruits.size() < MAX_FRUITS) {
+            spawnNewFruit();
+            lastFruitSpawnTime = currentTime;
+        }
+    }
+
+    private void spawnNewFruit() {
+        // Nájdi voľné miesto pre ovocie
+        int attempts = 0;
+        int maxAttempts = 10;
+        
+        while (attempts < maxAttempts) {
+            int x = 1 + (int)(Math.random() * (maze.getColumns() - 2));
+            int y = 1 + (int)(Math.random() * (maze.getRows() - 2));
+            
+            if (!maze.isWall(x, y)) {
+                int fruitType = (int)(Math.random() * 4); // 0-3 pre rôzne typy ovocia
+                float pixelX = x * scaleFactor + scaleFactor/2;
+                float pixelY = y * scaleFactor + scaleFactor/2;
+                
+                fruits.add(new Fruit(context, pixelX, pixelY, scaleFactor, fruitType));
+                break;
+            }
+            attempts++;
+        }
+    }
+
+    private void checkFruitCollisions() {
+        Iterator<Fruit> iterator = fruits.iterator();
+        while (iterator.hasNext()) {
+            Fruit fruit = iterator.next();
+            if (RectF.intersects(pacman.getBounds(), fruit.getBounds())) {
+                // Aplikuj boost podľa typu ovocia
+                applyFruitBoost(fruit);
+                score += fruit.getPoints();
+                iterator.remove();
+            }
+        }
+    }
+
+    private void applyFruitBoost(Fruit fruit) {
+        long currentTime = System.currentTimeMillis();
+        boostEndTime = currentTime + fruit.getBoostDuration();
+        
+        switch (fruit.getBoostType()) {
+            case 0: // Speed boost
+                hasSpeedBoost = true;
+                pacman.setSpeedMultiplier(1.5f);
+                break;
+            case 1: // Invincibility
+                hasInvincibility = true;
+                break;
+            case 2: // Extra life
+                // Implement if you have lives system
+                break;
+            case 3: // Double points
+                hasDoublePoints = true;
+                break;
+        }
+    }
+
+    private void checkBoosts() {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime > boostEndTime) {
+            // Reset all boosts
+            if (hasSpeedBoost) {
+                hasSpeedBoost = false;
+                pacman.setSpeedMultiplier(1.0f);
+            }
+            hasInvincibility = false;
+            hasDoublePoints = false;
         }
     }
 }

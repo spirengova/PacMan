@@ -17,6 +17,7 @@ public class PacMan {
     private float moveProgress = 0.0f;  // Progres pohybu medzi bunkami
     private int desiredDirection = -1;  // Požadovaný smer
     private float rotation = 0;  // Uhol rotácie v stupňoch
+    private float speedMultiplier = 1.0f;
 
     public PacMan(int startGridX, int startGridY, float cellSize) {
         this.gridX = startGridX;
@@ -62,7 +63,7 @@ public class PacMan {
         }
 
         if (direction != -1) {
-            moveProgress += speed;
+            moveProgress += speed * speedMultiplier;
             if (moveProgress >= 1.0f) {
                 moveProgress = 0.0f;
 
@@ -205,5 +206,9 @@ public class PacMan {
 
     public RectF getBounds() {
         return bounds;
+    }
+
+    public void setSpeedMultiplier(float multiplier) {
+        this.speedMultiplier = multiplier;
     }
 } 
