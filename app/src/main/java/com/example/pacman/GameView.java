@@ -47,8 +47,6 @@ public class GameView extends SurfaceView implements Runnable {
     private float touchX, touchY;
     private int screenX, screenY;
     private float scaleFactor;
-    private SoundPool soundPool;
-    private int eatDotSound;
     private MediaPlayer backgroundMusic;
     private SharedPreferences preferences;
     private static final String PREFS_NAME = "PacManPrefs";
@@ -93,12 +91,6 @@ public class GameView extends SurfaceView implements Runnable {
     private static final long MESSAGE_DURATION = 2000; // 2 sekundy
     private int lives = 3; // Počiatočný počet životov
 
-    // Pridať nové premenné pre zvuky
-    private int fruitEatenSound;
-    private int extraLifeSound;
-    private int powerUpSound;
-    private int deathSound;
-
     public GameView(Context context, int screenX, int screenY) {
         super(context);
         this.context = context;
@@ -119,9 +111,6 @@ public class GameView extends SurfaceView implements Runnable {
 
         // Inicializácia duchov
         initializeGhosts();
-
-        // Inicializácia zvukov
-        initializeSounds();
 
         // Načítaj nastavenia
         preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
@@ -153,28 +142,8 @@ public class GameView extends SurfaceView implements Runnable {
 
     private void initializeSounds() {
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                AudioAttributes audioAttributes = new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_GAME)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build();
-                soundPool = new SoundPool.Builder()
-                        .setMaxStreams(5)
-                        .setAudioAttributes(audioAttributes)
-                        .build();
-            } else {
-                soundPool = new SoundPool(5, AudioManager.STREAM_MUSIC, 0);
-            }
-
-            // Načítanie zvukov z raw priečinka
-            eatDotSound = soundPool.load(context, R.raw.eat_dot, 1);
-            fruitEatenSound = soundPool.load(context, R.raw.fruit_eaten, 1);
-            extraLifeSound = soundPool.load(context, R.raw.extra_life, 1);
-            powerUpSound = soundPool.load(context, R.raw.power_up, 1);
-            deathSound = soundPool.load(context, R.raw.death, 1);
-
             // Inicializácia hudby na pozadí
-            backgroundMusic = MediaPlayer.create(context, R.raw.background_music);
+            backgroundMusic = MediaPlayer.create(context, R.raw.sound);
             backgroundMusic.setLooping(true);
             if (preferences.getBoolean(SOUND_ENABLED, true)) {
                 backgroundMusic.start();
@@ -307,13 +276,11 @@ public class GameView extends SurfaceView implements Runnable {
         } else {
             score += DOT_POINTS;
         }
-        playEatSound();
     }
 
     private void handleGhostCollision(Ghost ghost) {
         if (!ghost.isVulnerable() && !hasInvincibility) {
             lives--;
-            playSound(deathSound);
             if (lives <= 0) {
                 isGameOver = true;
                 isPaused = true;
@@ -323,7 +290,6 @@ public class GameView extends SurfaceView implements Runnable {
         } else {
             ghost.handleEaten();
             score += hasDoublePoints ? 400 : 200;
-            playSound(eatDotSound);
         }
     }
 
@@ -412,10 +378,6 @@ public class GameView extends SurfaceView implements Runnable {
         if (backgroundMusic != null) {
             backgroundMusic.release();
             backgroundMusic = null;
-        }
-        if (soundPool != null) {
-            soundPool.release();
-            soundPool = null;
         }
     }
 
@@ -763,26 +725,6 @@ public class GameView extends SurfaceView implements Runnable {
         }
     }
 
-    private void playEatSound() {
-        if (preferences.getBoolean(SOUND_ENABLED, true)) {
-            try {
-                soundPool.play(eatDotSound, 1.0f, 1.0f, 1, 0, 1.0f);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    private void playGhostEatenSound() {
-        if (preferences.getBoolean(SOUND_ENABLED, true)) {
-            try {
-                soundPool.play(eatDotSound, 1.0f, 1.0f, 1, 0, 1.0f);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
     private void resetGhosts() {
         if (ghosts != null) {
             for (Ghost ghost : ghosts) {
@@ -875,22 +817,18 @@ public class GameView extends SurfaceView implements Runnable {
                 hasSpeedBoost = true;
                 pacman.setSpeedMultiplier(1.5f);
                 currentBoostMessage = "Speed Boost!";
-                playSound(powerUpSound);
                 break;
             case 1: // Invincibility
                 hasInvincibility = true;
                 currentBoostMessage = "Invincibility!";
-                playSound(powerUpSound);
                 break;
             case 2: // Extra life
                 lives++;
                 currentBoostMessage = "Extra Life!";
-                playSound(extraLifeSound);
                 break;
             case 3: // Double points
                 hasDoublePoints = true;
                 currentBoostMessage = "Double Points!";
-                playSound(powerUpSound);
                 break;
         }
     }
@@ -913,13 +851,38 @@ public class GameView extends SurfaceView implements Runnable {
         canvas.drawText(livesText, 20, 100, scorePaint); // Posunuté nižšie pod skóre
     }
 
-    private void playSound(int soundId) {
-        if (preferences.getBoolean(SOUND_ENABLED, true)) {
-            try {
-                soundPool.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f);
-            } catch (Exception e) {
-                e.printStackTrace();
+    public void toggleBackgroundMusic() {
+        if (backgroundMusic != null) {
+            if (backgroundMusic.isPlaying()) {
+                backgroundMusic.pause();
+                preferences.edit().putBoolean(SOUND_ENABLED, false).apply();
+            } else {
+                backgroundMusic.start();
+                preferences.edit().putBoolean(SOUND_ENABLED, true).apply();
             }
+        }
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        if (backgroundMusic != null && backgroundMusic.isPlaying()) {
+            backgroundMusic.pause();
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (backgroundMusic != null && preferences.getBoolean(SOUND_ENABLED, true)) {
+            backgroundMusic.start();
+        }
+    }
+
+    public void cleanup() {
+        if (backgroundMusic != null) {
+            backgroundMusic.release();
+            backgroundMusic = null;
         }
     }
 }
