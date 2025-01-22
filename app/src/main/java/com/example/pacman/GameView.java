@@ -78,7 +78,6 @@ public class GameView extends SurfaceView implements Runnable {
     private static final float BUTTON_SPACING = 20f;
     private float touchStartX, touchStartY;  // Pridané pre sledovanie swipe
     private static final float SWIPE_THRESHOLD = 50;  // Minimálna vzdialenosť pre swipe
-    private RectF[] buttonRects = new RectF[3];
 
     public GameView(Context context, int screenX, int screenY) {
         super(context);
@@ -131,22 +130,22 @@ public class GameView extends SurfaceView implements Runnable {
 
     private void initializeSounds() {
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                AudioAttributes audioAttributes = new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_GAME)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build();
-                soundPool = new SoundPool.Builder()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+            AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_GAME)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build();
+            soundPool = new SoundPool.Builder()
                     .setMaxStreams(5)
-                    .setAudioAttributes(audioAttributes)
-                    .build();
-            } else {
+                .setAudioAttributes(audioAttributes)
+                .build();
+        } else {
                 soundPool = new SoundPool(5, AudioManager.STREAM_MUSIC, 0);
-            }
-            
+        }
+
             // Načítaj zvuky
             try {
-                eatDotSound = soundPool.load(context, R.raw.eat_dot, 1);
+        eatDotSound = soundPool.load(context, R.raw.eat_dot, 1);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -201,17 +200,17 @@ public class GameView extends SurfaceView implements Runnable {
     @Override
     public void run() {
         while (playing) {
-            long startFrameTime = System.currentTimeMillis();
+                long startFrameTime = System.currentTimeMillis();
 
             if (!isPaused) {  // Odstránená kontrola isGameOver, aby sa Pacman mohol hýbať
                 update();
             }
 
-            draw();
+                draw();
 
-            long timeThisFrame = System.currentTimeMillis() - startFrameTime;
+                long timeThisFrame = System.currentTimeMillis() - startFrameTime;
             if (timeThisFrame > 0) {
-                fps = MILLIS_IN_SECOND / timeThisFrame;
+                    fps = MILLIS_IN_SECOND / timeThisFrame;
             }
         }
     }
@@ -324,7 +323,7 @@ public class GameView extends SurfaceView implements Runnable {
                         // Vertikálny swipe
                         if (deltaY > 0) {
                             setPacmanDirection(1);  // Dole
-                        } else {
+                } else {
                             setPacmanDirection(3);  // Hore
                         }
                     }
@@ -339,7 +338,7 @@ public class GameView extends SurfaceView implements Runnable {
         isPaused = true;
         try {
             if (gameThread != null) {
-                gameThread.join();
+            gameThread.join();
             }
         } catch (InterruptedException e) {
             e.printStackTrace();
@@ -350,8 +349,8 @@ public class GameView extends SurfaceView implements Runnable {
         playing = true;
         isPaused = false;
         if (gameThread == null || !gameThread.isAlive()) {
-            gameThread = new Thread(this);
-            gameThread.start();
+        gameThread = new Thread(this);
+        gameThread.start();
         }
     }
 
@@ -581,7 +580,7 @@ public class GameView extends SurfaceView implements Runnable {
                 editor.putInt("wallState_" + row + "_" + col, maze.getWall(col, row));
             }
         }
-        
+
         editor.apply();
     }
 
@@ -639,68 +638,27 @@ public class GameView extends SurfaceView implements Runnable {
     }
 
     private void drawButtons(Canvas canvas) {
-        // Nastavenia pre tlačidlá
-        float buttonWidth = screenX * 0.8f;  // 80% šírky obrazovky
-        float buttonHeight = 100;  // Výška tlačidla
-        float buttonSpacing = 20;  // Medzera medzi tlačidlami
-        float startY = 150;  // Začiatočná Y pozícia pre prvé tlačidlo
+        // Vykresli pozadie tlačidiel so zaoblenými rohmi
+        canvas.drawRoundRect(pauseButtonBounds, BUTTON_RADIUS, BUTTON_RADIUS, buttonPaint);
+        canvas.drawRoundRect(exitButtonBounds, BUTTON_RADIUS, BUTTON_RADIUS, buttonPaint);
         
-        // Nastavenie štýlu pre tlačidlá
-        Paint buttonPaint = new Paint();
-        buttonPaint.setColor(Color.BLUE);
-        buttonPaint.setStyle(Paint.Style.FILL);
+        // Nastavenie farby pre text
+        buttonPaint.setColor(BUTTON_TEXT_COLOR);
         
-        Paint textPaint = new Paint();
-        textPaint.setColor(Color.WHITE);
-        textPaint.setTextSize(40);
-        textPaint.setTextAlign(Paint.Align.CENTER);
-        
-        // Pozície tlačidiel
-        float centerX = screenX / 2;
-        
-        // Tlačidlo RESUME/PAUSE
-        RectF resumeButton = new RectF(
-            centerX - buttonWidth/2,
-            startY,
-            centerX + buttonWidth/2,
-            startY + buttonHeight
-        );
-        canvas.drawRect(resumeButton, buttonPaint);
+        // Vykresli text tlačidiel
+        float textY = BUTTON_MARGIN + BUTTON_HEIGHT/2 + BUTTON_TEXT_SIZE/3;
         canvas.drawText(isPaused ? "RESUME" : "PAUSE", 
-            centerX, 
-            startY + buttonHeight/2 + 15, 
-            textPaint);
-        
-        // Tlačidlo SOUND ON/OFF
-        RectF soundButton = new RectF(
-            centerX - buttonWidth/2,
-            startY + buttonHeight + buttonSpacing,
-            centerX + buttonWidth/2,
-            startY + 2*buttonHeight + buttonSpacing
-        );
-        canvas.drawRect(soundButton, buttonPaint);
-        canvas.drawText(preferences.getBoolean(SOUND_ENABLED, true) ? "SOUND ON" : "SOUND OFF",
-            centerX,
-            startY + buttonHeight + buttonSpacing + buttonHeight/2 + 15,
-            textPaint);
-        
-        // Tlačidlo QUIT
-        RectF quitButton = new RectF(
-            centerX - buttonWidth/2,
-            startY + 2*buttonHeight + 2*buttonSpacing,
-            centerX + buttonWidth/2,
-            startY + 3*buttonHeight + 2*buttonSpacing
-        );
-        canvas.drawRect(quitButton, buttonPaint);
-        canvas.drawText("QUIT",
-            centerX,
-            startY + 2*buttonHeight + 2*buttonSpacing + buttonHeight/2 + 15,
-            textPaint);
+            pauseButtonBounds.centerX(), 
+            textY, 
+            buttonPaint);
             
-        // Aktualizácia oblastí tlačidiel pre detekciu dotyku
-        buttonRects[0] = resumeButton;
-        buttonRects[1] = soundButton;
-        buttonRects[2] = quitButton;
+        canvas.drawText("EXIT", 
+            exitButtonBounds.centerX(), 
+            textY, 
+            buttonPaint);
+            
+        // Reset farby pre ďalšie použitie
+        buttonPaint.setColor(BUTTON_COLOR);
     }
 
     private void draw() {
