@@ -18,6 +18,7 @@ public class MenuActivity extends AppCompatActivity {
         Button playButton = findViewById(R.id.buttonPlay);
         Button settingsButton = findViewById(R.id.buttonSettings);
         Button exitButton = findViewById(R.id.buttonExit);
+        Button howToPlayButton = findViewById(R.id.howtoPlay); // Add reference to the how to play button
 
         playButton.setOnClickListener(v -> {
             if (hasSavedGame) {
@@ -29,6 +30,11 @@ public class MenuActivity extends AppCompatActivity {
 
         settingsButton.setOnClickListener(v -> {
             Intent intent = new Intent(MenuActivity.this, SettingsActivity.class);
+            startActivity(intent);
+        });
+
+        howToPlayButton.setOnClickListener(v -> {
+            Intent intent = new Intent(MenuActivity.this, InfoActivity.class);
             startActivity(intent);
         });
 

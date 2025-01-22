@@ -1,56 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="16dp"
-    android:gravity="center">
+    android:gravity="center"
+    android:background="@drawable/menu_gradient_background"
+    android:padding="16dp">
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="How to Play"
+        android:text="AKO HRAŤ"
         android:textSize="24sp"
+        android:textColor="@color/yellow"
+        android:fontFamily="monospace"
         android:textStyle="bold"
+        android:layout_marginBottom="24dp" />
+
+    <TextView
+        android:layout_width="280dp"
+        android:layout_height="wrap_content"
+        android:text="1. Použi gestá potiahnutím pre pohyb Pac-Mana HORE DOLU DOPRAVA DOĽAVA."
+        android:textSize="16sp"
+        android:textColor="@color/yellow"
+        android:fontFamily="monospace"
+        android:gravity="center"
         android:layout_marginBottom="16dp" />
 
     <TextView
-        android:layout_width="wrap_content"
+        android:layout_width="280dp"
         android:layout_height="wrap_content"
-        android:text="1. Use the arrow keys or swipe gestures to move Pac-Man.\n\n"
+        android:text="2. Pozbieraj všetky bodky v bludisku a vyhráš!"
         android:textSize="16sp"
-        android:layout_marginBottom="8dp" />
+        android:textColor="@color/yellow"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:layout_marginBottom="16dp" />
 
     <TextView
-        android:layout_width="wrap_content"
+        android:layout_width="280dp"
         android:layout_height="wrap_content"
-        android:text="2. Collect all the dots in the maze to advance to the next level.\n\n"
+        android:text="3. Vyhýbaj sa duchom! Ak ťa chytia, hra končí a ty si prehral."
         android:textSize="16sp"
-        android:layout_marginBottom="8dp" />
+        android:textColor="@color/yellow"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:layout_marginBottom="16dp" />
 
     <TextView
-        android:layout_width="wrap_content"
+        android:layout_width="280dp"
         android:layout_height="wrap_content"
-        android:text="3. Avoid the ghosts! If they catch you, you lose a life.\n\n"
+        android:text="4. Zjedz veľkú guličku na dočasnú supersilu, ktorá ti dovolí zničiť duchov."
         android:textSize="16sp"
-        android:layout_marginBottom="8dp" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="4. Eat power pellets to temporarily turn the ghosts blue, allowing you to eat them for extra points.\n\n"
-        android:textSize="16sp"
-        android:layout_marginBottom="8dp" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="5. Collect fruits for bonus points.\n\n"
-        android:textSize="16sp"
-        android:layout_marginBottom="24dp" />
+        android:textColor="@color/yellow"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:layout_marginBottom="16dp" />
 
     <Button
         android:id="@+id/buttonBack"
-        android:layout_width="wrap_content"
+        android:layout_width="180dp"
         android:layout_height="wrap_content"
-        android:text="Back to Menu" />
+        android:background="@drawable/menu_button_background"
+        android:fontFamily="monospace"
+        android:minHeight="40dp"
+        android:text="BACK TO MENU"
+        android:textColor="@color/yellow"
+        android:textSize="18sp" />
+
 </LinearLayout>
