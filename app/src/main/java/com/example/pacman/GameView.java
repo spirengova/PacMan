@@ -87,6 +87,11 @@ public class GameView extends SurfaceView implements Runnable {
     private boolean hasInvincibility = false;
     private boolean hasDoublePoints = false;
     private long boostEndTime = 0;
+    private Paint boostMessagePaint;
+    private String currentBoostMessage = "";
+    private long boostMessageEndTime = 0;
+    private static final long MESSAGE_DURATION = 2000; // 2 sekundy
+    private int lives = 3; // Počiatočný počet životov
 
     public GameView(Context context, int screenX, int screenY) {
         super(context);
@@ -176,6 +181,11 @@ public class GameView extends SurfaceView implements Runnable {
         gameOverPaint.setColor(Color.RED);
         gameOverPaint.setTextSize(100);
         gameOverPaint.setTextAlign(Paint.Align.CENTER);
+
+        boostMessagePaint = new Paint();
+        boostMessagePaint.setColor(Color.GREEN);
+        boostMessagePaint.setTextSize(40);
+        boostMessagePaint.setTextAlign(Paint.Align.CENTER);
     }
 
     private void initializeButtons() {
@@ -205,6 +215,10 @@ public class GameView extends SurfaceView implements Runnable {
 
     private void startGame() {
         playing = true;
+        lives = 3; // Reset životov pri novej hre
+        score = 0; // Reset skóre
+        isGameOver = false;
+        isPaused = false;
         gameThread = new Thread(this);
         gameThread.start();
     }
@@ -285,9 +299,14 @@ public class GameView extends SurfaceView implements Runnable {
 
     private void handleGhostCollision(Ghost ghost) {
         if (!ghost.isVulnerable() && !hasInvincibility) {
-            isGameOver = true;
-            isPaused = true;
-            drawGameOver();
+            lives--;
+            if (lives <= 0) {
+                isGameOver = true;
+                isPaused = true;
+            } else {
+                // Reset pozícií
+                resetPositions();
+            }
         } else {
             ghost.handleEaten();
             score += hasDoublePoints ? 400 : 200;
@@ -627,8 +646,14 @@ public class GameView extends SurfaceView implements Runnable {
 
     private void drawGameOver() {
         if (canvas != null) {
-            String text = "GAME OVER";
-            canvas.drawText(text, screenX/2, screenY/2, gameOverPaint);
+            String gameOverText = "GAME OVER";
+            String scoreText = "Final Score: " + score;
+            
+            // Vykresli GAME OVER
+            canvas.drawText(gameOverText, screenX/2, screenY/2 - 60, gameOverPaint);
+            
+            // Vykresli skóre pod GAME OVER
+            canvas.drawText(scoreText, screenX/2, screenY/2 + 60, gameOverPaint);
         }
     }
 
@@ -708,7 +733,13 @@ public class GameView extends SurfaceView implements Runnable {
                     canvas.restore();
 
                     drawScore();
+                    drawLives();
                     drawButtons(canvas);
+                    
+                    // Vykresli správu o booste ak je aktívna
+                    if (System.currentTimeMillis() < boostMessageEndTime) {
+                        canvas.drawText(currentBoostMessage, screenX/2, screenY - 100, boostMessagePaint);
+                    }
 
                     if (isGameOver) {
                         drawGameOver();
@@ -796,20 +827,25 @@ public class GameView extends SurfaceView implements Runnable {
     private void applyFruitBoost(Fruit fruit) {
         long currentTime = System.currentTimeMillis();
         boostEndTime = currentTime + fruit.getBoostDuration();
+        boostMessageEndTime = currentTime + MESSAGE_DURATION;
         
         switch (fruit.getBoostType()) {
             case 0: // Speed boost
                 hasSpeedBoost = true;
                 pacman.setSpeedMultiplier(1.5f);
+                currentBoostMessage = "Speed Boost!";
                 break;
             case 1: // Invincibility
                 hasInvincibility = true;
+                currentBoostMessage = "Invincibility!";
                 break;
             case 2: // Extra life
-                // Implement if you have lives system
+                lives++;
+                currentBoostMessage = "Extra Life!";
                 break;
             case 3: // Double points
                 hasDoublePoints = true;
+                currentBoostMessage = "Double Points!";
                 break;
         }
     }
@@ -825,5 +861,10 @@ public class GameView extends SurfaceView implements Runnable {
             hasInvincibility = false;
             hasDoublePoints = false;
         }
+    }
+
+    private void drawLives() {
+        String livesText = "Lives: " + lives;
+        canvas.drawText(livesText, 20, 50, scorePaint);
     }
 }
