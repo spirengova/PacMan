@@ -8,6 +8,7 @@ import android.widget.Spinner;
 import android.widget.ArrayAdapter;
 import android.widget.AdapterView;
 import android.widget.Toast;
+import android.widget.Button;
 import androidx.appcompat.app.AppCompatActivity;
 
 public class SettingsActivity extends AppCompatActivity {
@@ -25,6 +26,14 @@ public class SettingsActivity extends AppCompatActivity {
         setContentView(R.layout.activity_settings);
 
         preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+
+        // Exit button
+        Button exitButton = findViewById(R.id.exitButton);
+        exitButton.setOnClickListener(v -> {
+            // Save any pending changes
+            preferences.edit().apply();
+            finish();
+        });
 
         // Volume control
         volumeSeekBar = findViewById(R.id.volumeSeekBar);
@@ -63,6 +72,11 @@ public class SettingsActivity extends AppCompatActivity {
             public void onNothingSelected(AdapterView<?> parent) {}
         });
     }
+
+    @Override
+    public void onBackPressed() {
+        // Save any pending changes before exiting
+        preferences.edit().apply();
+        super.onBackPressed();
+    }
 }
-
-

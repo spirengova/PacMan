@@ -26,60 +26,42 @@
         android:fontFamily="monospace"
         android:textStyle="bold"/>
 
-    <LinearLayout
-        android:layout_width="wrap_content"
+    <Button
+        android:id="@+id/buttonPlay"
+        android:layout_width="159dp"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center">
-
-        <Button
-            android:id="@+id/buttonPlay"
-            android:layout_width="140dp"
-            android:layout_height="wrap_content"
-            android:minHeight="40dp"
-            android:text="PLAY"
-            android:textSize="18sp"
-            android:background="@drawable/menu_button_background"
-            android:textColor="@color/yellow"
-            android:layout_marginEnd="8dp"
-            android:fontFamily="monospace"/>
-
-        <Button
-            android:id="@+id/buttonSettings"
-            android:layout_width="140dp"
-            android:layout_height="wrap_content"
-            android:minHeight="40dp"
-            android:text="SETTINGS"
-            android:textSize="18sp"
-            android:background="@drawable/menu_button_background"
-            android:textColor="@color/yellow"
-            android:fontFamily="monospace"/>
-    </LinearLayout>
+        android:layout_marginEnd="0dp"
+        android:background="@drawable/menu_button_background"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:minHeight="40dp"
+        android:text="PLAY"
+        android:textColor="@color/yellow"
+        android:textSize="18sp" />
 
     <Button
-        android:id="@+id/buttonInfo"
-        android:layout_width="140dp"
+        android:id="@+id/buttonSettings"
+        android:layout_width="159dp"
         android:layout_height="wrap_content"
-        android:minHeight="40dp"
-        android:text="HOW TO PLAY"
-        android:textSize="18sp"
         android:background="@drawable/menu_button_background"
+        android:fontFamily="monospace"
+        android:minHeight="40dp"
+        android:text="SETTINGS"
         android:textColor="@color/yellow"
         android:layout_marginTop="12dp"
-        android:fontFamily="monospace"
-        android:textStyle="bold"/>
+        android:textSize="18sp" />
 
     <Button
         android:id="@+id/buttonExit"
-        android:layout_width="140dp"
+        android:layout_width="159dp"
         android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/exit_button_background"
+        android:fontFamily="monospace"
         android:minHeight="40dp"
         android:text="EXIT"
-        android:textSize="18sp"
-        android:background="@drawable/exit_button_background"
         android:textColor="@color/yellow"
-        android:layout_marginTop="12dp"
-        android:fontFamily="monospace"
-        android:textStyle="bold"/>
+        android:textSize="18sp"
+        android:textStyle="bold" />
 
 </LinearLayout>

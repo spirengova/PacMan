@@ -18,7 +18,6 @@ public class MenuActivity extends AppCompatActivity {
         Button playButton = findViewById(R.id.buttonPlay);
         Button settingsButton = findViewById(R.id.buttonSettings);
         Button exitButton = findViewById(R.id.buttonExit);
-        Button infoButton = findViewById(R.id.buttonInfo);
 
         playButton.setOnClickListener(v -> {
             if (hasSavedGame) {
@@ -34,20 +33,15 @@ public class MenuActivity extends AppCompatActivity {
         });
 
         exitButton.setOnClickListener(v -> finish());
-
-        infoButton.setOnClickListener(v -> {
-            Intent intent = new Intent(MenuActivity.this, InfoActivity.class);
-            startActivity(intent);
-        });
     }
 
     private void showGameOptionsDialog() {
         new AlertDialog.Builder(this)
-            .setTitle("Game Options")
-            .setMessage("Do you want to start a new game or continue?")
-            .setPositiveButton("New Game", (dialog, which) -> startNewGame())
-            .setNegativeButton("Continue", (dialog, which) -> continueGame())
-            .show();
+                .setTitle("Game Options")
+                .setMessage("Do you want to start a new game or continue?")
+                .setPositiveButton("New Game", (dialog, which) -> startNewGame())
+                .setNegativeButton("Continue", (dialog, which) -> continueGame())
+                .show();
     }
 
     private void startNewGame() {
@@ -67,6 +61,6 @@ public class MenuActivity extends AppCompatActivity {
         super.onResume();
         // Check if there's a saved game state
         hasSavedGame = getSharedPreferences("PacManPrefs", MODE_PRIVATE)
-            .getBoolean("hasSavedGame", false);
+                .getBoolean("hasSavedGame", false);
     }
 }
