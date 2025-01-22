@@ -24,6 +24,7 @@ import android.content.res.Configuration;
 import android.graphics.Typeface;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.os.Handler;
 
 public class GameView extends SurfaceView implements Runnable {
     private Thread gameThread;
@@ -35,6 +36,11 @@ public class GameView extends SurfaceView implements Runnable {
     private final int MILLIS_IN_SECOND = 1000;
     private Context context;
     
+    // Konštanty pre rozmery bludiska
+    private static final int MAZE_WIDTH = 19;  // Šírka bludiska v bunkách
+    private static final int MAZE_HEIGHT = 21; // Výška bludiska v bunkách
+    private static final float MAP_TOP_MARGIN = 100; // Priestor pre tlačidlá
+    
     private Maze maze;
     private PacMan pacman;
     private float touchX, touchY;
@@ -42,9 +48,6 @@ public class GameView extends SurfaceView implements Runnable {
     private float scaleFactor;
     private SoundPool soundPool;
     private int eatDotSound;
-    private int eatGhostSound;
-    private int gameStartSound;
-    private int deathSound;
     private MediaPlayer backgroundMusic;
     private SharedPreferences preferences;
     private static final String PREFS_NAME = "PacManPrefs";
@@ -52,175 +55,163 @@ public class GameView extends SurfaceView implements Runnable {
     private int score = 0;
     private Paint scorePaint;
     private static final int DOT_POINTS = 10;
-    private static final int POWER_PELLET_POINTS = 50;
-    private static final int GHOST_POINTS = 200;
-    private List<Ghost> ghosts;
-    private List<Fruit> fruits;
+    private static final int POWER_PELLET_POINTS = 30;  // Body za power pellet
     private boolean isGameOver = false;
-    private boolean allCollected = false;
-    private static final int GHOST_COUNT = 4;
-    private static final int FRUIT_COUNT = 4;
     private Paint gameOverPaint;
-    private boolean powerMode = false;
-    private long powerModeTime = 0;
-    private static final long POWER_MODE_DURATION = 5000; // 5 sekúnd
-    private int eatFruitSound;
     private boolean isPaused = false;
-    private boolean speedBoost = false;
-    private boolean doublePoints = false;
-    private long speedBoostTime = 0;
-    private long doublePointsTime = 0;
-    private static final float SPEED_BOOST_MULTIPLIER = 1.5f;
-    private static final int BOOST_DURATION = 5000; // 5 sekúnd pre všetky boosty
-    private int lives = 3; // Začiatočný počet životov
-    private Paint livesPaint; // Pre vykreslenie počtu životov
-    private String boostMessage = "";
-    private long boostMessageTime = 0;
-    private static final int MESSAGE_DURATION = 5000; // Predĺžené na 5 sekúnd aby sa zobrazoval celý odpočet
-    private Paint boostMessagePaint;
-    private Paint boostTimerPaint;
-    private int currentLevel = 1;
-    private static final float GHOST_SPEED_INCREASE = 0.2f; // O koľko sa zvýši rýchlosť duchov v každom leveli
     private boolean isLevelComplete = false;
+    private int currentLevel = 1;  // Pridáme premennú pre level
+    private ArrayList<Ghost> ghosts;  // Pole pre všetkých duchov
+    private Handler handler;
+    private float mapOffsetX;
+    private float mapOffsetY;
+    private Paint buttonPaint;
+    private RectF pauseButtonBounds;
+    private RectF exitButtonBounds;
+    private static final float BUTTON_MARGIN = 20;
+    private static final float BUTTON_HEIGHT = 80;
+    private static final float BUTTON_RADIUS = 20f;
+    private static final float BUTTON_WIDTH = 200f;
+    private static final int BUTTON_COLOR = Color.rgb(33, 150, 243);
+    private static final int BUTTON_TEXT_COLOR = Color.WHITE;
+    private static final float BUTTON_TEXT_SIZE = 40f;
+    private static final float BUTTON_SPACING = 20f;
+    private float touchStartX, touchStartY;  // Pridané pre sledovanie swipe
+    private static final float SWIPE_THRESHOLD = 50;  // Minimálna vzdialenosť pre swipe
+    private RectF[] buttonRects = new RectF[3];
 
-    public GameView(Context context) {
+    public GameView(Context context, int screenX, int screenY) {
         super(context);
         this.context = context;
+        this.screenX = screenX;
+        this.screenY = screenY;
+        
         holder = getHolder();
         paint = new Paint();
         
-        // Inicializácia score paint
+        // Výpočet mierky s ohľadom na hornú medzeru
+        float scaleX = screenX / (float)    MAZE_WIDTH;
+        float scaleY = (screenY - MAP_TOP_MARGIN) / (float) MAZE_HEIGHT;
+        scaleFactor = Math.min(scaleX, scaleY) * 0.95f;
+        
+        // Inicializácia herných objektov
+        maze = new Maze(scaleFactor);
+        pacman = new PacMan(9, 15, scaleFactor);  // Začiatočná pozícia Pac-Mana
+        
+        // Inicializácia duchov
+        initializeGhosts();
+        
+        // Inicializácia zvukov
+        initializeSounds();
+        
+        // Načítaj nastavenia
+        preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        
+        // Inicializácia textov
+        initializeTextPaints();
+        
+        // Vypočítaj offset pre centrovanie
+        calculateMapOffset();
+        
+        // Inicializácia tlačidiel
+        initializeButtons();
+        
+        handler = new Handler();
+        
+        startGame();
+    }
+
+    private void initializeGhosts() {
+        ghosts = new ArrayList<>();
+        // Vytvor troch duchov s rôznymi farbami
+        ghosts.add(new Ghost(context, 8, 9, scaleFactor, 0));  // Červený
+        ghosts.add(new Ghost(context, 9, 9, scaleFactor, 1));  // Ružový
+        ghosts.add(new Ghost(context, 10, 9, scaleFactor, 2)); // Oranžový
+    }
+
+    private void initializeSounds() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_GAME)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build();
+                soundPool = new SoundPool.Builder()
+                    .setMaxStreams(5)
+                    .setAudioAttributes(audioAttributes)
+                    .build();
+            } else {
+                soundPool = new SoundPool(5, AudioManager.STREAM_MUSIC, 0);
+            }
+            
+            // Načítaj zvuky
+            try {
+                eatDotSound = soundPool.load(context, R.raw.eat_dot, 1);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void initializeTextPaints() {
         scorePaint = new Paint();
         scorePaint.setColor(Color.WHITE);
         scorePaint.setTextSize(50);
         scorePaint.setTextAlign(Paint.Align.LEFT);
         
-        preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        
-        // Inicializácia zvuku
-        backgroundMusic = MediaPlayer.create(context, R.raw.sound);
-        backgroundMusic.setLooping(true);
-        
-        if (preferences.getBoolean(SOUND_ENABLED, true)) {
-            backgroundMusic.start();
-        }
-        
-        // Get screen dimensions
-        WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
-        Display display = wm.getDefaultDisplay();
-        Point size = new Point();
-        display.getSize(size);
-        screenX = size.x;
-        screenY = size.y;
-        
-        // Vypočítame veľkosť bunky tak, aby sa bludisko zmestilo na obrazovku
-        float mazeWidth = 19; // počet stĺpcov v bludisku
-        float mazeHeight = 21; // počet riadkov v bludisku
-        float cellSizeX = screenX / mazeWidth;
-        float cellSizeY = screenY / mazeHeight;
-        scaleFactor = Math.min(cellSizeX, cellSizeY);
-        
-        // Initialize game objects with scaled dimensions
-        maze = new Maze(scaleFactor);
-        
-        // Umiestni Pacmana na štartovaciu pozíciu (stred spodnej časti)
-        float startX = (maze.getColumns() / 2) * scaleFactor;
-        float startY = (maze.getRows() - 2) * scaleFactor;
-        pacman = new PacMan(startX, startY, scaleFactor / 2);
-        pacman.setMaxX(maze.getColumns() * scaleFactor);
-
-        // V konštruktore inicializujte zvuky
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-            AudioAttributes audioAttributes = new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_GAME)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build();
-            
-            soundPool = new SoundPool.Builder()
-                .setMaxStreams(4)
-                .setAudioAttributes(audioAttributes)
-                .build();
-        } else {
-            soundPool = new SoundPool(4, AudioManager.STREAM_MUSIC, 0);
-        }
-
-        // Načítajte zvuky
-        eatDotSound = soundPool.load(context, R.raw.eat_dot, 1);
-        eatGhostSound = soundPool.load(context, R.raw.eat_ghost, 1);
-        gameStartSound = soundPool.load(context, R.raw.sound, 1);
-        deathSound = soundPool.load(context, R.raw.death, 1);
-
-        // Inicializácia duchov
-        ghosts = new ArrayList<>();
-        ghosts.add(new Ghost(context, 5 * scaleFactor, 5 * scaleFactor, scaleFactor, 0)); // Red ghost
-        ghosts.add(new Ghost(context, 10 * scaleFactor, 5 * scaleFactor, scaleFactor, 1)); // Pink ghost
-        ghosts.add(new Ghost(context, 5 * scaleFactor, 10 * scaleFactor, scaleFactor, 2)); // Blue ghost
-        ghosts.add(new Ghost(context, 10 * scaleFactor, 10 * scaleFactor, scaleFactor, 3)); // Orange ghost
-        
-        // Načítaj zvuk pre zjedenie ovocia
-        eatFruitSound = soundPool.load(context, R.raw.eat_fruit, 1);
-        
-        // Inicializácia ovocia s pozíciami mimo modrých blokov
-        fruits = new ArrayList<>();
-        float[][] fruitPositions = {
-            {3, 3},           // Ľavý horný roh, ďalej od steny
-            {maze.getColumns()-4, 3},  // Pravý horný roh, ďalej od steny
-            {3, maze.getRows()-4},     // Ľavý dolný roh, ďalej od steny
-            {maze.getColumns()-4, maze.getRows()-4}  // Pravý dolný roh, ďalej od steny
-        };
-        
-        for (int i = 0; i < FRUIT_COUNT; i++) {
-            float fruitX = fruitPositions[i][0] * scaleFactor;
-            float fruitY = fruitPositions[i][1] * scaleFactor;
-            fruits.add(new Fruit(context, fruitX, fruitY, scaleFactor, i));
-        }
-
-        // Inicializácia game over textu
         gameOverPaint = new Paint();
         gameOverPaint.setColor(Color.RED);
         gameOverPaint.setTextSize(100);
         gameOverPaint.setTextAlign(Paint.Align.CENTER);
+    }
 
-        // Inicializácia lives paint
-        livesPaint = new Paint();
-        livesPaint.setColor(Color.WHITE);
-        livesPaint.setTextSize(50);
-        livesPaint.setTextAlign(Paint.Align.RIGHT);
-
-        // Inicializácia paint pre boost message
-        boostMessagePaint = new Paint();
-        boostMessagePaint.setColor(Color.YELLOW);
-        boostMessagePaint.setTextSize(40);
-        boostMessagePaint.setTextAlign(Paint.Align.CENTER);
-        boostMessagePaint.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
-
-        // Inicializácia paint pre timer
-        boostTimerPaint = new Paint();
-        boostTimerPaint.setColor(Color.WHITE);
-        boostTimerPaint.setTextSize(30);
-        boostTimerPaint.setTextAlign(Paint.Align.CENTER);
-        boostTimerPaint.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL));
-
-        // Načítaj aktuálny level
-        currentLevel = preferences.getInt("current_level", 1);
+    private void initializeButtons() {
+        buttonPaint = new Paint();
+        buttonPaint.setColor(BUTTON_COLOR);
+        buttonPaint.setStyle(Paint.Style.FILL);
+        buttonPaint.setAntiAlias(true);
+        buttonPaint.setTextSize(BUTTON_TEXT_SIZE);
+        buttonPaint.setTextAlign(Paint.Align.CENTER);
+        buttonPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
         
-        // Nastav rýchlosť duchov podľa levelu
-        for (Ghost ghost : ghosts) {
-            ghost.setSpeedMultiplier(1.0f + (currentLevel - 1) * GHOST_SPEED_INCREASE);
-        }
+        // Oba tlačidlá na pravej strane
+        exitButtonBounds = new RectF(
+            screenX - BUTTON_MARGIN - BUTTON_WIDTH,
+            BUTTON_MARGIN,
+            screenX - BUTTON_MARGIN,
+            BUTTON_MARGIN + BUTTON_HEIGHT
+        );
+        
+        pauseButtonBounds = new RectF(
+            screenX - 2 * BUTTON_MARGIN - 2 * BUTTON_WIDTH,
+            BUTTON_MARGIN,
+            screenX - 2 * BUTTON_MARGIN - BUTTON_WIDTH,
+            BUTTON_MARGIN + BUTTON_HEIGHT
+        );
+    }
+
+    private void startGame() {
+        playing = true;
+        gameThread = new Thread(this);
+        gameThread.start();
     }
 
     @Override
     public void run() {
         while (playing) {
-            if (!isPaused) {
-                long startFrameTime = System.currentTimeMillis();
+            long startFrameTime = System.currentTimeMillis();
+
+            if (!isPaused) {  // Odstránená kontrola isGameOver, aby sa Pacman mohol hýbať
                 update();
-                draw();
-                long timeThisFrame = System.currentTimeMillis() - startFrameTime;
-                if (timeThisFrame >= 1) {
-                    fps = MILLIS_IN_SECOND / timeThisFrame;
-                }
+            }
+
+            draw();
+
+            long timeThisFrame = System.currentTimeMillis() - startFrameTime;
+            if (timeThisFrame > 0) {
+                fps = MILLIS_IN_SECOND / timeThisFrame;
             }
         }
     }
@@ -228,218 +219,140 @@ public class GameView extends SurfaceView implements Runnable {
     private void update() {
         if (!isGameOver && !isPaused) {
             pacman.update(maze);
-            updateGhosts(); // Ensure this is called to update ghost movement
             
-            // Kontrola kolízie so stenou
-            if (maze.isWall(pacman.getX(), pacman.getY())) {
-                pacman.setDirection((pacman.getDirection() + 2) % 4);
-                pacman.update(maze); // Revert the move if it hits a wall
-                return;
-            }
-
-            // Check for victory
-            if (maze.areAllDotsCollected()) {
-                showVictoryMessage();
-                return;
-            }
-
-            // Aktualizácia power mode
-            if (powerMode && System.currentTimeMillis() - powerModeTime > POWER_MODE_DURATION) {
-                powerMode = false;
-            }
-
-            // Kontrola portálov
-            if (pacman.getX() < 0) {
-                pacman.setPosition(maze.getColumns() * scaleFactor, pacman.getY());
-            } else if (pacman.getX() > maze.getColumns() * scaleFactor) {
-                pacman.setPosition(0, pacman.getY());
+            // Konvertuj ArrayList<Ghost> na Ghost[]
+            Ghost[] ghostArray = ghosts.toArray(new Ghost[0]);
+            
+            // Aktualizuj duchov s konvertovaným poľom
+            for (Ghost ghost : ghosts) {
+                ghost.update(maze, pacman, ghostArray);
             }
 
             // Kontrola kolízie s duchmi
             for (Ghost ghost : ghosts) {
-                ghost.update(maze, pacman);
-                if (RectF.intersects(ghost.getBounds(), pacman.getBounds())) {
-                    if (powerMode) {
-                        // Pacman môže zjesť ducha
-                        score += GHOST_POINTS * (doublePoints ? 2 : 1);
-                        ghost.resetPosition();
-                        if (preferences.getBoolean(SOUND_ENABLED, true)) {
-                            soundPool.play(eatGhostSound, 1, 1, 0, 0, 1);
-                        }
-                    } else {
-                        lives--;
-                        if (lives <= 0) {
-                            gameOver();
-                        } else {
-                            resetPositions();
-                            if (preferences.getBoolean(SOUND_ENABLED, true)) {
-                                soundPool.play(deathSound, 1, 1, 0, 0, 1);
-                            }
-                        }
-                        return;
-                    }
+                if (RectF.intersects(pacman.getBounds(), ghost.getBounds())) {
+                    handleGhostCollision(ghost);
                 }
             }
-
-            // Zbieranie bodov a power pellets
-            int dotType = maze.getDot(pacman.getX(), pacman.getY());
-            if (dotType == 2) { // Normal dot
-                score += DOT_POINTS;
-                if (preferences.getBoolean(SOUND_ENABLED, true)) {
-                    soundPool.play(eatDotSound, 1, 1, 0, 0, 1);
-                }
-            } else if (dotType == 3) { // Power pellet
-                score += POWER_PELLET_POINTS;
-                powerMode = true;
-                powerModeTime = System.currentTimeMillis();
-                if (preferences.getBoolean(SOUND_ENABLED, true)) {
-                    soundPool.play(eatGhostSound, 1, 1, 0, 0, 1);
-                }
+            
+            // Kontrola kolízie s bodkami
+            int dotType = maze.getDot(pacman.getGridX(), pacman.getGridY());
+            if (dotType > 0) {
+                handleDotCollection(dotType);
             }
-
-            // Kontrola kolízie s ovocím
-            checkFruitCollision();
-
-            // Kontrola či sú všetky bodky zjedené
-            boolean allDotsCollected = true;
-            for (int i = 0; i < maze.getRows(); i++) {
-                for (int j = 0; j < maze.getColumns(); j++) {
-                    if (maze.getDotType(i, j) == 2 || maze.getDotType(i, j) == 3) {
-                        allDotsCollected = false;
-                        break;
-                    }
-                }
-                if (!allDotsCollected) break;
-            }
-
-            if (allDotsCollected && !isLevelComplete) {
+            
+            // Kontrola víťazstva
+            if (maze.areAllDotsCollected() && !isLevelComplete) {
+                isLevelComplete = true;
                 levelComplete();
             }
-
-            // Kontrola trvania boostov
-            if (speedBoost && System.currentTimeMillis() - speedBoostTime > BOOST_DURATION) {
-                speedBoost = false;
-                pacman.setSpeedMultiplier(1.0f);
-            }
-            if (doublePoints && System.currentTimeMillis() - doublePointsTime > BOOST_DURATION) {
-                doublePoints = false;
-            }
         }
     }
 
-    private void draw() {
-        if (holder.getSurface().isValid()) {
-            canvas = holder.lockCanvas();
-            canvas.drawColor(Color.BLACK);
-            
-            float offsetX = (screenX - (maze.getColumns() * scaleFactor)) / 2;
-            float offsetY = (screenY - (maze.getRows() * scaleFactor)) / 2;
-            
-            canvas.save();
-            canvas.translate(offsetX, offsetY);
-            
-            // Vykresli bludisko
-            maze.draw(canvas);
-            
-            // Vykresli ovocie
-            for (Fruit fruit : fruits) {
-                fruit.draw(canvas);
-            }
-            
-            // Vykresli duchov
+    private void handleDotCollection(int dotType) {
+        maze.removeDot(pacman.getGridX(), pacman.getGridY());
+        if (dotType == Maze.POWER_PELLET) {
+            // Power Pellet - urob duchov zraniteľných
             for (Ghost ghost : ghosts) {
-                if (powerMode) {
-                    // Pridaj blikanie alebo zmenu farby duchov počas power mode
-                    canvas.save();
-                    canvas.scale(0.8f, 0.8f, ghost.getX(), ghost.getY());
-                    ghost.draw(canvas);
-                    canvas.restore();
-                } else {
-                    ghost.draw(canvas);
-                }
+                ghost.makeVulnerable();
             }
-            
-            // Vykresli Pacmana - farba sa mení len pri zbieraní ovocia
-            pacman.draw(canvas);
-            
-            canvas.restore();
-            
-            // Vykresli skóre
-            canvas.drawText("Score: " + score, 20, 60, scorePaint);
-            canvas.drawText("Lives: " + lives, screenX - 20, 60, livesPaint);
-            
-            // Ak je hra skončená
-            if (isGameOver) {
-                String message = allCollected ? "YOU WIN!" : "GAME OVER";
-                canvas.drawText(message, (float) screenX /2, (float) screenY /2, gameOverPaint);
-                canvas.drawText("Score: " + score, (float) screenX /2, (float) screenY /2 + 100, gameOverPaint);
-            }
-            
-            // Vykresli boost message a timer ak je aktívny
-            if (System.currentTimeMillis() - boostMessageTime < MESSAGE_DURATION) {
-                float messageY = maze.getRows() * scaleFactor * 0.2f; // 20% od vrchu bludiska
-                canvas.drawText(boostMessage, screenX / 2f, messageY, boostMessagePaint);
-                
-                // Vypočítaj zostávajúci čas pre aktívny boost
-                String timeLeft = "";
-                if (speedBoost) {
-                    long remaining = (BOOST_DURATION - (System.currentTimeMillis() - speedBoostTime)) / 1000;
-                    if (remaining > 0) timeLeft = remaining + "s";
-                } else if (powerMode) {
-                    long remaining = (POWER_MODE_DURATION - (System.currentTimeMillis() - powerModeTime)) / 1000;
-                    if (remaining > 0) timeLeft = remaining + "s";
-                } else if (doublePoints) {
-                    long remaining = (BOOST_DURATION - (System.currentTimeMillis() - doublePointsTime)) / 1000;
-                    if (remaining > 0) timeLeft = remaining + "s";
-                }
-                
-                if (!timeLeft.isEmpty()) {
-                    canvas.drawText(timeLeft, screenX / 2f, messageY + 40, boostTimerPaint);
-                }
-            }
-            
-            holder.unlockCanvasAndPost(canvas);
+            score += POWER_PELLET_POINTS;
+        } else {
+            score += DOT_POINTS;
+        }
+        playEatSound();
+    }
+
+    private void handleGhostCollision(Ghost ghost) {
+        if (!ghost.isVulnerable()) {
+            gameOver();
+        } else {
+            ghost.handleEaten();
+            score += 200;
+            playGhostEatenSound();
         }
     }
 
-    @SuppressLint("ClickableViewAccessibility")
+    private void drawScore() {
+        if (canvas != null) {
+            canvas.drawText("Score: " + score, 50, 50, scorePaint);
+        }
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        float x = event.getX();
+        float y = event.getY();
+
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
-                touchX = event.getX();
-                touchY = event.getY();
-                break;
-            case MotionEvent.ACTION_UP:
-                float dx = event.getX() - touchX;
-                float dy = event.getY() - touchY;
-                
-                // Determine direction based on swipe
-                if (Math.abs(dx) > Math.abs(dy)) {
-                    setPacmanDirection(dx > 0 ? 0 : 2); // Right or Left
-                } else {
-                    setPacmanDirection(dy > 0 ? 1 : 3); // Down or Up
+                // Kontrola tlačidiel
+                if (pauseButtonBounds.contains(x, y)) {
+                    if (isPaused) {
+                        resume();
+                    } else {
+                        pause();
+                    }
+                    return true;
                 }
-                break;
+                
+                if (exitButtonBounds.contains(x, y)) {
+                    ((MainActivity)context).finish();
+                    return true;
+                }
+                
+                // Ulož počiatočnú pozíciu pre swipe
+                touchStartX = x;
+                touchStartY = y;
+                return true;
+
+            case MotionEvent.ACTION_UP:
+                float deltaX = x - touchStartX;
+                float deltaY = y - touchStartY;
+                
+                // Zisti, či je to swipe (dostatočná vzdialenosť)
+                if (Math.abs(deltaX) > SWIPE_THRESHOLD || Math.abs(deltaY) > SWIPE_THRESHOLD) {
+                    // Zisti smer swipu
+                    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                        // Horizontálny swipe
+                        if (deltaX > 0) {
+                            setPacmanDirection(0);  // Vpravo
+                        } else {
+                            setPacmanDirection(2);  // Vľavo
+                        }
+                    } else {
+                        // Vertikálny swipe
+                        if (deltaY > 0) {
+                            setPacmanDirection(1);  // Dole
+                        } else {
+                            setPacmanDirection(3);  // Hore
+                        }
+                    }
+                }
+                return true;
         }
-        return true;
+        return super.onTouchEvent(event);
     }
 
     public void pause() {
-        isPaused = true;
         playing = false;
+        isPaused = true;
         try {
-            gameThread.join();
+            if (gameThread != null) {
+                gameThread.join();
+            }
         } catch (InterruptedException e) {
-            // Log error
+            e.printStackTrace();
         }
     }
 
     public void resume() {
-        isPaused = false;
         playing = true;
-        gameThread = new Thread(this);
-        gameThread.start();
+        isPaused = false;
+        if (gameThread == null || !gameThread.isAlive()) {
+            gameThread = new Thread(this);
+            gameThread.start();
+        }
     }
 
     public void destroy() {
@@ -455,99 +368,23 @@ public class GameView extends SurfaceView implements Runnable {
 
     public void setPacmanDirection(int direction) {
         if (pacman != null) {
-            // Skontrolujeme, či v novom smere nie je stena
-            float oldX = pacman.getX();
-            float oldY = pacman.getY();
-            
-            pacman.setDirection(direction);
-            pacman.update();
-            
-            // Ak je v novom smere stena, vrátime pôvodnú pozíciu a smer
-            if (maze.isWall(pacman.getX(), pacman.getY())) {
-                pacman.setDirection((direction + 2) % 4); // Vrátime opačný smer
-                pacman.update(); // Vrátime na pôvodnú pozíciu
-            }
+            pacman.setDirection(direction, maze);
         }
     }
 
     public void saveState(Bundle outState) {
-        outState.putInt("score", score);
-        outState.putBoolean("powerMode", powerMode);
-        outState.putLong("powerModeTime", powerModeTime);
-        outState.putBoolean("isGameOver", isGameOver);
-        outState.putBoolean("allCollected", allCollected);
-        
-        // Uloženie pozície a smeru Pacmana
-        outState.putFloat("pacmanX", pacman.getX());
-        outState.putFloat("pacmanY", pacman.getY());
+        outState.putInt("pacmanGridX", pacman.getGridX());
+        outState.putInt("pacmanGridY", pacman.getGridY());
         outState.putInt("pacmanDirection", pacman.getDirection());
-        
-        // Uloženie pozícií duchov
-        float[] ghostPositions = new float[ghosts.size() * 2];
-        for (int i = 0; i < ghosts.size(); i++) {
-            ghostPositions[i * 2] = ghosts.get(i).getX();
-            ghostPositions[i * 2 + 1] = ghosts.get(i).getY();
-        }
-        outState.putFloatArray("ghostPositions", ghostPositions);
-        
-        // Uloženie viditeľnosti ovocia
-        boolean[] fruitVisibility = new boolean[fruits.size()];
-        for (int i = 0; i < fruits.size(); i++) {
-            fruitVisibility[i] = fruits.get(i).isVisible();
-        }
-        outState.putBooleanArray("fruitVisibility", fruitVisibility);
-        
-        // Uloženie stavu bodiek v bludisku
-        int[][] dotState = new int[maze.getRows()][maze.getColumns()];
-        for (int i = 0; i < maze.getRows(); i++) {
-            for (int j = 0; j < maze.getColumns(); j++) {
-                dotState[i][j] = maze.getDotType(i, j);
-            }
-        }
-        outState.putSerializable("dotState", dotState);
-        outState.putInt("lives", lives);
+        // ... zvyšok kódu ...
     }
 
     public void restoreState(Bundle savedState) {
         if (savedState != null) {
-            score = savedState.getInt("score", 0);
-            powerMode = savedState.getBoolean("powerMode", false);
-            powerModeTime = savedState.getLong("powerModeTime", 0);
-            isGameOver = savedState.getBoolean("isGameOver", false);
-            allCollected = savedState.getBoolean("allCollected", false);
-            
-            // Obnovenie pozície a smeru Pacmana
-            float pacmanX = savedState.getFloat("pacmanX", pacman.getX());
-            float pacmanY = savedState.getFloat("pacmanY", pacman.getY());
-            int pacmanDirection = savedState.getInt("pacmanDirection", 0);
-            pacman.setPosition(pacmanX, pacmanY);
-            pacman.setDirection(pacmanDirection);
-            
-            // Obnovenie pozícií duchov
-            float[] ghostPositions = savedState.getFloatArray("ghostPositions");
-            if (ghostPositions != null) {
-                for (int i = 0; i < ghosts.size(); i++) {
-                    ghosts.get(i).setPosition(
-                        ghostPositions[i * 2],
-                        ghostPositions[i * 2 + 1]
-                    );
-                }
-            }
-            
-            // Obnovenie viditeľnosti ovocia
-            boolean[] fruitVisibility = savedState.getBooleanArray("fruitVisibility");
-            if (fruitVisibility != null) {
-                for (int i = 0; i < fruits.size(); i++) {
-                    fruits.get(i).setVisible(fruitVisibility[i]);
-                }
-            }
-            
-            // Obnovenie stavu bodiek v bludisku
-            int[][] dotState = (int[][]) savedState.getSerializable("dotState");
-            if (dotState != null) {
-                maze.restoreDotState(dotState);
-            }
-            lives = savedState.getInt("lives", 3);
+            int pacmanGridX = savedState.getInt("pacmanGridX", pacman.getGridX());
+            int pacmanGridY = savedState.getInt("pacmanGridY", pacman.getGridY());
+            pacman.setPosition(pacmanGridX, pacmanGridY);
+            // ... zvyšok kódu ...
         }
     }
 
@@ -563,11 +400,6 @@ public class GameView extends SurfaceView implements Runnable {
         float cellSizeY = screenY / mazeHeight;
         scaleFactor = Math.min(cellSizeX, cellSizeY);
         
-        // Aktualizácia maximálnej X súradnice pre Pacmana
-        if (pacman != null) {
-            pacman.setMaxX(maze.getColumns() * scaleFactor);
-        }
-        
         updateGameObjectsPositions();
     }
 
@@ -577,20 +409,13 @@ public class GameView extends SurfaceView implements Runnable {
             pacman.updateScale(scaleFactor);
         }
         
-        if (ghosts != null) {
-            for (Ghost ghost : ghosts) {
-                ghost.updateScale(scaleFactor);
-            }
-        }
-        
-        if (fruits != null) {
-            for (Fruit fruit : fruits) {
-                fruit.updateScale(scaleFactor);
-            }
-        }
-        
         if (maze != null) {
             maze.updateScale(scaleFactor);
+        }
+        
+        // Aktualizácia mierky pre všetkých duchov
+        for (Ghost ghost : ghosts) {
+            ghost.updateScale(scaleFactor);
         }
     }
 
@@ -613,87 +438,32 @@ public class GameView extends SurfaceView implements Runnable {
         updateGameObjectsPositions();
     }
 
-    private void checkFruitCollision() {
-        for (Fruit fruit : fruits) {
-            if (fruit.isVisible() && RectF.intersects(pacman.getBounds(), fruit.getBounds())) {
-                // Základné skóre
-                int basePoints = fruit.getPoints();
-                score += doublePoints ? basePoints * 2 : basePoints;
-                
-                // Aplikuj boost efekt
-                switch (fruit.getBoostType()) {
-                    case 0: // Speed boost
-                        speedBoost = true;
-                        speedBoostTime = System.currentTimeMillis();
-                        pacman.setSpeedMultiplier(SPEED_BOOST_MULTIPLIER);
-                        break;
-                    case 1: // Invincibility (použije existujúci power mode)
-                        powerMode = true;
-                        powerModeTime = System.currentTimeMillis();
-                        break;
-                    case 2: // Extra life
-                        lives++;
-                        break;
-                    case 3: // Double points
-                        doublePoints = true;
-                        doublePointsTime = System.currentTimeMillis();
-                        break;
-                }
-                
-                fruit.setVisible(false);
-                if (preferences.getBoolean(SOUND_ENABLED, true)) {
-                    soundPool.play(eatFruitSound, 1, 1, 0, 0, 1);
-                }
-                
-                // Nastav správu podľa typu boostu
-                switch (fruit.getBoostType()) {
-                    case 0:
-                        boostMessage = "SPEED BOOST!";
-                        break;
-                    case 1:
-                        boostMessage = "INVINCIBILITY!";
-                        break;
-                    case 2:
-                        boostMessage = "EXTRA LIFE!";
-                        break;
-                    case 3:
-                        boostMessage = "DOUBLE POINTS!";
-                        break;
-                }
-                boostMessageTime = System.currentTimeMillis();
-            }
-        }
-    }
-
-    private void resetPositions() {
-        // Reset pozície Pacmana na štartovaciu pozíciu
-        float startX = ((float) maze.getColumns() / 2) * scaleFactor;
-        float startY = (maze.getRows() - 2) * scaleFactor;
-        pacman.setPosition(startX, startY);
-        
-        // Reset pozícií duchov
-        for (Ghost ghost : ghosts) {
-            ghost.resetPosition();
-        }
-    }
-
     private void levelComplete() {
         isLevelComplete = true;
         currentLevel++;
         
-        // Ulož progres
-        preferences.edit()
+        // Uložíme aktuálny level
+        getContext().getSharedPreferences("PacManPrefs", Context.MODE_PRIVATE)
+            .edit()
             .putInt("current_level", currentLevel)
-            .putInt("total_score", score)
             .apply();
 
-        // Zvýš rýchlosť duchov
-        for (Ghost ghost : ghosts) {
-            ghost.setSpeedMultiplier(1.0f + (currentLevel - 1) * GHOST_SPEED_INCREASE);
-        }
+        // Zobrazíme dialóg o dokončení levelu
+        new AlertDialog.Builder(getContext())
+            .setTitle("Level Complete!")
+            .setMessage("Score: " + score)
+            .setPositiveButton("Next Level", (dialog, which) -> {
+                startNextLevel();
+            })
+            .setCancelable(false)
+            .show();
+    }
 
-        // Reset pozícií a stavov
-        resetLevel();
+    private void startNextLevel() {
+        // Reset pozícií a bodiek, ale zachovaj skóre
+        resetPositions();
+        maze.resetDots();
+        isLevelComplete = false;
     }
 
     private void resetLevel() {
@@ -704,7 +474,6 @@ public class GameView extends SurfaceView implements Runnable {
         maze.resetDots();
         
         // Reset stavov
-        powerMode = false;
         isLevelComplete = false;
         
         // Ostatné resety zostávajú rovnaké
@@ -712,103 +481,287 @@ public class GameView extends SurfaceView implements Runnable {
 
     private void gameOver() {
         isGameOver = true;
-        if (preferences.getBoolean(SOUND_ENABLED, true)) {
-            soundPool.play(deathSound, 1, 1, 0, 0, 1);
-        }
-        
-        // Ulož štatistiky
-        int totalAttempts = preferences.getInt("total_attempts", 0) + 1;
-        preferences.edit()
-            .putInt("total_attempts", totalAttempts)
-            .putInt("remaining_lives", lives)
-            .apply();
-    }
-
-    public void startNewGame() {
-        // Reset game state
-        score = 0;
-        lives = 3;
-        resetPositions();
-        maze.resetDots();
-        isGameOver = false;
-        isLevelComplete = false;
-        // Save that there's no saved game state
-        getContext().getSharedPreferences("PacManPrefs", Context.MODE_PRIVATE)
-            .edit().putBoolean("hasSavedGame", false).apply();
-    }
-
-    public void continueGame() {
-        // Restore game state from preferences
-        SharedPreferences prefs = getContext().getSharedPreferences("PacManPrefs", Context.MODE_PRIVATE);
-        score = prefs.getInt("score", 0);
-        lives = prefs.getInt("lives", 3);
-        float pacmanX = prefs.getFloat("pacmanX", pacman.getX());
-        float pacmanY = prefs.getFloat("pacmanY", pacman.getY());
-        pacman.setPosition(pacmanX, pacmanY);
-
-        // Restore ghost positions
-        for (int i = 0; i < ghosts.size(); i++) {
-            float ghostX = prefs.getFloat("ghostX" + i, ghosts.get(i).getX());
-            float ghostY = prefs.getFloat("ghostY" + i, ghosts.get(i).getY());
-            ghosts.get(i).setPosition(ghostX, ghostY);
-        }
-
-        // Restore collected dots
-        int[][] dotState = new int[maze.getRows()][maze.getColumns()];
-        for (int row = 0; row < maze.getRows(); row++) {
-            for (int col = 0; col < maze.getColumns(); col++) {
-                dotState[row][col] = prefs.getInt("dotState_" + row + "_" + col, maze.getDotType(row, col));
-            }
-        }
-        maze.restoreDotState(dotState);
-    }
-
-    public void saveState() {
-        // Save the current game state to preferences
-        SharedPreferences.Editor editor = getContext().getSharedPreferences("PacManPrefs", Context.MODE_PRIVATE).edit();
-        editor.putBoolean("hasSavedGame", true);
-        editor.putInt("score", score);
-        editor.putInt("lives", lives);
-        editor.putFloat("pacmanX", pacman.getX());
-        editor.putFloat("pacmanY", pacman.getY());
-
-        // Save ghost positions
-        for (int i = 0; i < ghosts.size(); i++) {
-            editor.putFloat("ghostX" + i, ghosts.get(i).getX());
-            editor.putFloat("ghostY" + i, ghosts.get(i).getY());
-        }
-
-        // Save collected dots
-        for (int row = 0; row < maze.getRows(); row++) {
-            for (int col = 0; col < maze.getColumns(); col++) {
-                editor.putInt("dotState_" + row + "_" + col, maze.getDotType(row, col));
-            }
-        }
-
-        editor.apply();
-    }
-
-    // Ensure ghost movement logic is correct
-    private void updateGhosts() {
-        for (Ghost ghost : ghosts) {
-            ghost.update(maze, pacman);
-        }
-    }
-
-    private void showVictoryMessage() {
-        // Pause the game
         isPaused = true;
+        
+        // Ulož high score ak je vyššie ako doterajšie
+        int highScore = preferences.getInt("high_score", 0);
+        if (score > highScore) {
+            preferences.edit().putInt("high_score", score).apply();
+        }
 
-        // Show a victory message
+        // Zobraz game over správu
         new AlertDialog.Builder(getContext())
-            .setTitle("Congratulations!")
-            .setMessage("You have collected all the dots and won the game!")
+            .setTitle("Game Over")
+            .setMessage("Your score: " + score)
             .setPositiveButton("Return to Menu", (dialog, which) -> {
-                // Return to the main menu
+                // Návrat do menu
                 Intent intent = new Intent(getContext(), MenuActivity.class);
                 getContext().startActivity(intent);
             })
             .setCancelable(false)
             .show();
+    }
+
+    public void startNewGame() {
+        // Vymaž uložené dáta
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.clear();
+        editor.apply();
+        
+        // Resetuj stav hry
+        score = 0;
+        currentLevel = 1;
+        isGameOver = false;
+        isPaused = false;
+        isLevelComplete = false;
+        
+        // Inicializuj bludisko a postavy
+        resetPositions();
+        maze.resetDots();
+        resetGhosts();
+        
+        // Spusti hru
+        resume();
+    }
+
+    public void continueGame() {
+        // Načítaj základné informácie o hre
+        score = preferences.getInt("score", 0);
+        isGameOver = preferences.getBoolean("isGameOver", false);
+        isPaused = preferences.getBoolean("isPaused", false);
+        currentLevel = preferences.getInt("currentLevel", 1);
+        
+        // Načítaj pozíciu Pacmana
+        int pacmanGridX = preferences.getInt("pacmanGridX", maze.getColumns() / 2);
+        int pacmanGridY = preferences.getInt("pacmanGridY", maze.getRows() - 2);
+        int pacmanDirection = preferences.getInt("pacmanDirection", -1);
+        
+        // Vytvor pole pre uložený stav bodiek
+        int[][] savedDots = new int[maze.getRows()][maze.getColumns()];
+        
+        // Načítaj stav bodiek
+        for (int row = 0; row < maze.getRows(); row++) {
+            for (int col = 0; col < maze.getColumns(); col++) {
+                savedDots[row][col] = preferences.getInt("dotState_" + row + "_" + col, 0);
+            }
+        }
+        
+        // Obnov stav bodiek pomocou novej metódy
+        maze.restoreDotState(savedDots);
+        
+        // Nastav pozíciu Pacmana
+        pacman.setPosition(pacmanGridX, pacmanGridY);
+        pacman.setDirection(pacmanDirection, maze);
+        
+        // Resetuj duchov na ich počiatočné pozície
+        resetGhosts();
+        
+        // Spusti hru
+        resume();
+    }
+
+    public void saveState() {
+        SharedPreferences.Editor editor = preferences.edit();
+        
+        // Ulož základné informácie o hre
+        editor.putInt("score", score);
+        editor.putBoolean("isGameOver", isGameOver);
+        editor.putBoolean("isPaused", isPaused);
+        editor.putInt("currentLevel", currentLevel);
+        
+        // Ulož pozíciu Pacmana
+        editor.putInt("pacmanGridX", pacman.getGridX());
+        editor.putInt("pacmanGridY", pacman.getGridY());
+        editor.putInt("pacmanDirection", pacman.getDirection());
+        
+        // Ulož stav bodiek a stien
+        for (int row = 0; row < maze.getRows(); row++) {
+            for (int col = 0; col < maze.getColumns(); col++) {
+                editor.putInt("dotState_" + row + "_" + col, maze.getDot(col, row));
+                editor.putInt("wallState_" + row + "_" + col, maze.getWall(col, row));
+            }
+        }
+        
+        editor.apply();
+    }
+
+    private void resetPositions() {
+        pacman.setPosition(maze.getColumns() / 2, maze.getRows() - 2);
+        
+        // Reset pozícií všetkých duchov
+        for (Ghost ghost : ghosts) {
+            ghost.resetPosition();
+        }
+    }
+
+    private void updateScale() {
+        pacman.updateScale(scaleFactor);
+        
+        // Aktualizácia mierky pre všetkých duchov
+        for (Ghost ghost : ghosts) {
+            ghost.updateScale(scaleFactor);
+        }
+    }
+
+    private void drawGameOver() {
+        if (canvas != null) {
+            String text = "GAME OVER";
+            canvas.drawText(text, screenX/2, screenY/2, gameOverPaint);
+        }
+    }
+
+    private void calculateMapOffset() {
+        float mapWidth = maze.getColumns() * scaleFactor;
+        float mapHeight = maze.getRows() * scaleFactor;
+        
+        mapOffsetX = (screenX - mapWidth) / 2;
+        mapOffsetY = ((screenY - MAP_TOP_MARGIN) - mapHeight) / 2 + MAP_TOP_MARGIN;
+    }
+
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+        screenX = width;
+        screenY = height;
+        
+        // Prepočítaj mierku
+        float scaleX = screenX / (float) maze.getColumns();
+        float scaleY = screenY / (float) maze.getRows();
+        scaleFactor = Math.min(scaleX, scaleY) * 0.95f;  // Nechaj malý okraj
+        
+        // Aktualizuj všetky objekty s novou mierkou
+        maze.updateScale(scaleFactor);
+        pacman.updateScale(scaleFactor);
+        for (Ghost ghost : ghosts) {
+            ghost.updateScale(scaleFactor);
+        }
+        
+        // Vypočítaj offset pre centrovanie
+        calculateMapOffset();
+    }
+
+    private void drawButtons(Canvas canvas) {
+        // Nastavenia pre tlačidlá
+        float buttonWidth = screenX * 0.8f;  // 80% šírky obrazovky
+        float buttonHeight = 100;  // Výška tlačidla
+        float buttonSpacing = 20;  // Medzera medzi tlačidlami
+        float startY = 150;  // Začiatočná Y pozícia pre prvé tlačidlo
+        
+        // Nastavenie štýlu pre tlačidlá
+        Paint buttonPaint = new Paint();
+        buttonPaint.setColor(Color.BLUE);
+        buttonPaint.setStyle(Paint.Style.FILL);
+        
+        Paint textPaint = new Paint();
+        textPaint.setColor(Color.WHITE);
+        textPaint.setTextSize(40);
+        textPaint.setTextAlign(Paint.Align.CENTER);
+        
+        // Pozície tlačidiel
+        float centerX = screenX / 2;
+        
+        // Tlačidlo RESUME/PAUSE
+        RectF resumeButton = new RectF(
+            centerX - buttonWidth/2,
+            startY,
+            centerX + buttonWidth/2,
+            startY + buttonHeight
+        );
+        canvas.drawRect(resumeButton, buttonPaint);
+        canvas.drawText(isPaused ? "RESUME" : "PAUSE", 
+            centerX, 
+            startY + buttonHeight/2 + 15, 
+            textPaint);
+        
+        // Tlačidlo SOUND ON/OFF
+        RectF soundButton = new RectF(
+            centerX - buttonWidth/2,
+            startY + buttonHeight + buttonSpacing,
+            centerX + buttonWidth/2,
+            startY + 2*buttonHeight + buttonSpacing
+        );
+        canvas.drawRect(soundButton, buttonPaint);
+        canvas.drawText(preferences.getBoolean(SOUND_ENABLED, true) ? "SOUND ON" : "SOUND OFF",
+            centerX,
+            startY + buttonHeight + buttonSpacing + buttonHeight/2 + 15,
+            textPaint);
+        
+        // Tlačidlo QUIT
+        RectF quitButton = new RectF(
+            centerX - buttonWidth/2,
+            startY + 2*buttonHeight + 2*buttonSpacing,
+            centerX + buttonWidth/2,
+            startY + 3*buttonHeight + 2*buttonSpacing
+        );
+        canvas.drawRect(quitButton, buttonPaint);
+        canvas.drawText("QUIT",
+            centerX,
+            startY + 2*buttonHeight + 2*buttonSpacing + buttonHeight/2 + 15,
+            textPaint);
+            
+        // Aktualizácia oblastí tlačidiel pre detekciu dotyku
+        buttonRects[0] = resumeButton;
+        buttonRects[1] = soundButton;
+        buttonRects[2] = quitButton;
+    }
+
+    private void draw() {
+        if (holder.getSurface().isValid()) {
+            canvas = holder.lockCanvas();
+            if (canvas != null) {
+                try {
+                    canvas.drawColor(Color.BLACK);
+                    canvas.save();
+                    canvas.translate(mapOffsetX, mapOffsetY);
+                    
+                    maze.draw(canvas);
+                    pacman.draw(canvas);
+                    for (Ghost ghost : ghosts) {
+                        ghost.draw(canvas);
+                    }
+                    
+                    canvas.restore();
+                    
+                    // Vykresli len skóre a tlačidlá
+                    drawScore();
+                    drawButtons(canvas);
+                    
+                    if (isGameOver) {
+                        drawGameOver();
+                    }
+                } finally {
+                    if (canvas != null) {
+                        holder.unlockCanvasAndPost(canvas);
+                    }
+                }
+            }
+        }
+    }
+
+    private void playEatSound() {
+        if (preferences.getBoolean(SOUND_ENABLED, true)) {
+            try {
+                soundPool.play(eatDotSound, 1.0f, 1.0f, 1, 0, 1.0f);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void playGhostEatenSound() {
+        if (preferences.getBoolean(SOUND_ENABLED, true)) {
+            try {
+                soundPool.play(eatDotSound, 1.0f, 1.0f, 1, 0, 1.0f);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void resetGhosts() {
+        if (ghosts != null) {
+            for (Ghost ghost : ghosts) {
+                ghost.resetPosition();
+                ghost.resetState();
+            }
+        }
     }
 } 

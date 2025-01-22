@@ -1,7 +1,12 @@
 package com.example.pacman;
 
 import android.os.Bundle;
+import android.view.WindowManager;
+import android.view.Display;
+import android.graphics.Point;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import android.content.SharedPreferences;
 
 public class MainActivity extends AppCompatActivity {
     private GameView gameView;
@@ -9,15 +14,37 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        gameView = new GameView(this);
+        
+        // Získaj rozmery obrazovky
+        WindowManager wm = getWindowManager();
+        Display display = wm.getDefaultDisplay();
+        Point size = new Point();
+        display.getSize(size);
+        
+        // Vytvor GameView s rozmermi obrazovky
+        gameView = new GameView(this, size.x, size.y);
         setContentView(gameView);
-
-        boolean newGame = getIntent().getBooleanExtra("newGame", true);
-        if (newGame) {
-            gameView.startNewGame();
+        
+        // Skontroluj, či existuje uložená hra
+        SharedPreferences preferences = getSharedPreferences("PacManPrefs", MODE_PRIVATE);
+        boolean hasSavedGame = preferences.contains("score");
+        
+        if (hasSavedGame) {
+            // Zobraz dialóg s možnosťami
+            new AlertDialog.Builder(this)
+                .setTitle("Pac-Man")
+                .setMessage("Chcete pokračovať v uloženej hre?")
+                .setPositiveButton("Pokračovať", (dialog, which) -> {
+                    gameView.continueGame();
+                })
+                .setNegativeButton("Nová hra", (dialog, which) -> {
+                    gameView.startNewGame();
+                })
+                .setCancelable(false)
+                .show();
         } else {
-            gameView.continueGame();
+            // Ak nie je uložená hra, začni novú
+            gameView.startNewGame();
         }
     }
 

@@ -11,8 +11,12 @@ public class Maze {
     private Paint dotPaint;
     private Paint powerPelletPaint;
     private float cellSize;
+    private int[][] dots;  // 0: žiadna bodka, 1: malá bodka, 2: veľká bodka
     
     // 0: empty, 1: wall, 2: dot, 3: power pellet
+    public static final int POWER_PELLET = 2;  // Konštanta pre power pellet
+    private static final int MAX_POWER_PELLETS = 2;  // Zmenené zo 4 na 2
+    
     public Maze(float scaleFactor) {
         cellSize = scaleFactor;
         
@@ -55,6 +59,16 @@ public class Maze {
         for (int i = 0; i < mazeData.length; i++) {
             originalMazeData[i] = mazeData[i].clone();
         }
+
+        // Inicializácia bodiek podľa mapy
+        dots = new int[mazeData.length][mazeData[0].length];
+        for (int y = 0; y < mazeData.length; y++) {
+            for (int x = 0; x < mazeData[0].length; x++) {
+                if (!isWall(x, y)) {
+                    dots[y][x] = 1;  // Základná bodka
+                }
+            }
+        }
     }
 
     public void draw(Canvas canvas) {
@@ -63,38 +77,36 @@ public class Maze {
                 float left = col * cellSize;
                 float top = row * cellSize;
                 
-                switch (mazeData[row][col]) {
-                    case 1: // Wall
+                // Kresli steny
+                if (mazeData[row][col] == 1) {
                         canvas.drawRect(left, top, 
                                      left + cellSize, 
                                      top + cellSize, 
                                      wallPaint);
-                        break;
-                    case 2: // Dot
-                        canvas.drawCircle(left + cellSize/2,
-                                       top + cellSize/2,
-                                       cellSize/10, dotPaint);
-                        break;
-                    case 3: // Power Pellet
-                        canvas.drawCircle(left + cellSize/2,
-                                       top + cellSize/2,
-                                       cellSize/4, powerPelletPaint);
-                        break;
+                }
+                
+                // Kresli bodky
+                if (dots[row][col] > 0) {
+                    float centerX = left + cellSize / 2;
+                    float centerY = top + cellSize / 2;
+                    
+                    if (dots[row][col] == POWER_PELLET) {
+                        // Väčší kruh pre power pellet
+                        canvas.drawCircle(centerX, centerY, cellSize * 0.3f, powerPelletPaint);
+                    } else {
+                        // Normálna bodka
+                        canvas.drawCircle(centerX, centerY, cellSize * 0.1f, dotPaint);
+                    }
                 }
             }
         }
     }
 
-    public boolean isWall(float x, float y) {
-        int col = (int)(x / cellSize);
-        int row = (int)(y / cellSize);
-        
-        if (row < 0 || row >= mazeData.length || 
-            col < 0 || col >= mazeData[0].length) {
-            return true;
+    public boolean isWall(int x, int y) {
+        if (x < 0 || x >= getColumns() || y < 0 || y >= getRows()) {
+            return true; // Ak je mimo hraníc, považuj to za stenu
         }
-        
-        return mazeData[row][col] == 1;
+        return mazeData[y][x] == 1; // 1 znamená stena
     }
 
     public int getDot(float x, float y) {
@@ -134,10 +146,15 @@ public class Maze {
         return mazeData[row][col];
     }
 
-    public void restoreDotState(int[][] state) {
-        for (int i = 0; i < mazeData.length; i++) {
-            for (int j = 0; j < mazeData[0].length; j++) {
-                mazeData[i][j] = state[i][j];
+    public void restoreDotState(int[][] savedDots) {
+        // Priamo skopíruj uložený stav bodiek
+        for (int y = 0; y < getRows(); y++) {
+            for (int x = 0; x < getColumns(); x++) {
+                dots[y][x] = savedDots[y][x];
+                // Ak je bodka zjedená (0), nastav aj mazeData na 0
+                if (savedDots[y][x] == 0 && !isWall(x, y)) {
+                    mazeData[y][x] = 0;
+                }
             }
         }
     }
@@ -147,20 +164,68 @@ public class Maze {
     }
 
     public void resetDots() {
-        // Obnov všetky bodky do pôvodného stavu
-        for (int i = 0; i < mazeData.length; i++) {
-            mazeData[i] = originalMazeData[i].clone();
-        }
-    }
-
-    public boolean areAllDotsCollected() {
-        for (int row = 0; row < mazeData.length; row++) {
-            for (int col = 0; col < mazeData[0].length; col++) {
-                if (mazeData[row][col] == 2 || mazeData[row][col] == 3) {
-                    return false; // There are still dots or power pellets
+        // Táto metóda by sa mala volať len pri novej hre
+        for (int y = 0; y < getRows(); y++) {
+            for (int x = 0; x < getColumns(); x++) {
+                if (!isWall(x, y) && originalMazeData[y][x] != 0) {
+                    dots[y][x] = 1;  // Základná bodka
+                } else {
+                    dots[y][x] = 0;  // Žiadna bodka v nedostupných miestach
                 }
             }
         }
-        return true; // All dots and power pellets are collected
+        addRandomPowerPellets();
+    }
+
+    private void addRandomPowerPellets() {
+        // Pridaj power pellety do rohov mapy
+        dots[1][1] = POWER_PELLET;  // Ľavý horný roh
+        dots[1][getColumns()-2] = POWER_PELLET;  // Pravý horný roh
+    }
+
+    public boolean areAllDotsCollected() {
+        for (int y = 0; y < getRows(); y++) {
+            for (int x = 0; x < getColumns(); x++) {
+                if (dots[y][x] > 0) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    public void setDot(int x, int y, int value) {
+        if (x >= 0 && x < getColumns() && y >= 0 && y < getRows()) {
+            dots[y][x] = value;
+        }
+    }
+
+    public int getDot(int x, int y) {
+        if (x >= 0 && x < getColumns() && y >= 0 && y < getRows()) {
+            return dots[y][x];
+        }
+        return 0;
+    }
+
+    public void removeDot(int x, int y) {
+        if (x >= 0 && x < getColumns() && y >= 0 && y < getRows()) {
+            // Odstráň bodku z oboch polí
+            dots[y][x] = 0;
+            mazeData[y][x] = 0;
+        }
+    }
+
+    public void setState(int x, int y, int wallState, int dotState) {
+        if (x >= 0 && x < getColumns() && y >= 0 && y < getRows()) {
+            mazeData[y][x] = wallState;
+            dots[y][x] = dotState;
+        }
+    }
+
+    public int getWall(int x, int y) {
+        if (x >= 0 && x < getColumns() && y >= 0 && y < getRows()) {
+            return mazeData[y][x];
+        }
+        return 0;
     }
 } 
