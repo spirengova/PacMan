@@ -25,6 +25,7 @@ import android.graphics.Typeface;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Handler;
+import java.util.Iterator;
 
 public class GameView extends SurfaceView implements Runnable {
     private Thread gameThread;
@@ -46,8 +47,6 @@ public class GameView extends SurfaceView implements Runnable {
     private float touchX, touchY;
     private int screenX, screenY;
     private float scaleFactor;
-    private SoundPool soundPool;
-    private int eatDotSound;
     private MediaPlayer backgroundMusic;
     private SharedPreferences preferences;
     private static final String PREFS_NAME = "PacManPrefs";
@@ -78,6 +77,19 @@ public class GameView extends SurfaceView implements Runnable {
     private static final float BUTTON_SPACING = 20f;
     private float touchStartX, touchStartY;  // Pridané pre sledovanie swipe
     private static final float SWIPE_THRESHOLD = 50;  // Minimálna vzdialenosť pre swipe
+    private List<Fruit> fruits;
+    private static final int MAX_FRUITS = 2;
+    private static final long FRUIT_SPAWN_INTERVAL = 10000; // 10 sekúnd
+    private long lastFruitSpawnTime;
+    private boolean hasSpeedBoost = false;
+    private boolean hasInvincibility = false;
+    private boolean hasDoublePoints = false;
+    private long boostEndTime = 0;
+    private Paint boostMessagePaint;
+    private String currentBoostMessage = "";
+    private long boostMessageEndTime = 0;
+    private static final long MESSAGE_DURATION = 2000; // 2 sekundy
+    private int lives = 3; // Počiatočný počet životov
 
     public GameView(Context context, int screenX, int screenY) {
         super(context);
@@ -100,9 +112,6 @@ public class GameView extends SurfaceView implements Runnable {
         // Inicializácia duchov
         initializeGhosts();
 
-        // Inicializácia zvukov
-        initializeSounds();
-
         // Načítaj nastavenia
         preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
 
@@ -117,6 +126,9 @@ public class GameView extends SurfaceView implements Runnable {
 
         handler = new Handler();
 
+        fruits = new ArrayList<>();
+        lastFruitSpawnTime = System.currentTimeMillis();
+
         startGame();
     }
 
@@ -130,24 +142,11 @@ public class GameView extends SurfaceView implements Runnable {
 
     private void initializeSounds() {
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                AudioAttributes audioAttributes = new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_GAME)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build();
-                soundPool = new SoundPool.Builder()
-                        .setMaxStreams(5)
-                        .setAudioAttributes(audioAttributes)
-                        .build();
-            } else {
-                soundPool = new SoundPool(5, AudioManager.STREAM_MUSIC, 0);
-            }
-
-            // Načítaj zvuky
-            try {
-                eatDotSound = soundPool.load(context, R.raw.eat_dot, 1);
-            } catch (Exception e) {
-                e.printStackTrace();
+            // Inicializácia hudby na pozadí
+            backgroundMusic = MediaPlayer.create(context, R.raw.sound);
+            backgroundMusic.setLooping(true);
+            if (preferences.getBoolean(SOUND_ENABLED, true)) {
+                backgroundMusic.start();
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -164,6 +163,11 @@ public class GameView extends SurfaceView implements Runnable {
         gameOverPaint.setColor(Color.RED);
         gameOverPaint.setTextSize(100);
         gameOverPaint.setTextAlign(Paint.Align.CENTER);
+
+        boostMessagePaint = new Paint();
+        boostMessagePaint.setColor(Color.GREEN);
+        boostMessagePaint.setTextSize(40);
+        boostMessagePaint.setTextAlign(Paint.Align.CENTER);
     }
 
     private void initializeButtons() {
@@ -193,6 +197,10 @@ public class GameView extends SurfaceView implements Runnable {
 
     private void startGame() {
         playing = true;
+        lives = 3; // Reset životov pri novej hre
+        score = 0; // Reset skóre
+        isGameOver = false;
+        isPaused = false;
         gameThread = new Thread(this);
         gameThread.start();
     }
@@ -245,6 +253,15 @@ public class GameView extends SurfaceView implements Runnable {
                 isLevelComplete = true;
                 levelComplete();
             }
+
+            // Update fruits
+            updateFruits();
+            
+            // Kontrola kolízie s ovocím
+            checkFruitCollisions();
+            
+            // Kontrola boostov
+            checkBoosts();
         }
     }
 
@@ -259,23 +276,26 @@ public class GameView extends SurfaceView implements Runnable {
         } else {
             score += DOT_POINTS;
         }
-        playEatSound();
     }
 
     private void handleGhostCollision(Ghost ghost) {
-        if (!ghost.isVulnerable()) {
-            gameOver();
+        if (!ghost.isVulnerable() && !hasInvincibility) {
+            lives--;
+            if (lives <= 0) {
+                isGameOver = true;
+                isPaused = true;
+            } else {
+                resetPositions();
+            }
         } else {
             ghost.handleEaten();
-            score += 200;
-            playGhostEatenSound();
+            score += hasDoublePoints ? 400 : 200;
         }
     }
 
     private void drawScore() {
-        if (canvas != null) {
-            canvas.drawText("Score: " + score, 50, 50, scorePaint);
-        }
+        String scoreText = "Score: " + score;
+        canvas.drawText(scoreText, 20, 50, scorePaint);
     }
 
     @Override
@@ -358,10 +378,6 @@ public class GameView extends SurfaceView implements Runnable {
         if (backgroundMusic != null) {
             backgroundMusic.release();
             backgroundMusic = null;
-        }
-        if (soundPool != null) {
-            soundPool.release();
-            soundPool = null;
         }
     }
 
@@ -604,8 +620,14 @@ public class GameView extends SurfaceView implements Runnable {
 
     private void drawGameOver() {
         if (canvas != null) {
-            String text = "GAME OVER";
-            canvas.drawText(text, screenX/2, screenY/2, gameOverPaint);
+            String gameOverText = "GAME OVER";
+            String scoreText = "Final Score: " + score;
+            
+            // Vykresli GAME OVER
+            canvas.drawText(gameOverText, screenX/2, screenY/2 - 60, gameOverPaint);
+            
+            // Vykresli skóre pod GAME OVER
+            canvas.drawText(scoreText, screenX/2, screenY/2 + 60, gameOverPaint);
         }
     }
 
@@ -671,6 +693,12 @@ public class GameView extends SurfaceView implements Runnable {
                     canvas.translate(mapOffsetX, mapOffsetY);
 
                     maze.draw(canvas);
+                    
+                    // Draw fruits
+                    for (Fruit fruit : fruits) {
+                        fruit.draw(canvas);
+                    }
+                    
                     pacman.draw(canvas);
                     for (Ghost ghost : ghosts) {
                         ghost.draw(canvas);
@@ -678,38 +706,21 @@ public class GameView extends SurfaceView implements Runnable {
 
                     canvas.restore();
 
-                    // Vykresli len skóre a tlačidlá
                     drawScore();
+                    drawLives();
                     drawButtons(canvas);
+                    
+                    // Vykresli správu o booste ak je aktívna
+                    if (System.currentTimeMillis() < boostMessageEndTime) {
+                        canvas.drawText(currentBoostMessage, screenX/2, screenY - 100, boostMessagePaint);
+                    }
 
                     if (isGameOver) {
                         drawGameOver();
                     }
                 } finally {
-                    if (canvas != null) {
-                        holder.unlockCanvasAndPost(canvas);
-                    }
+                    holder.unlockCanvasAndPost(canvas);
                 }
-            }
-        }
-    }
-
-    private void playEatSound() {
-        if (preferences.getBoolean(SOUND_ENABLED, true)) {
-            try {
-                soundPool.play(eatDotSound, 1.0f, 1.0f, 1, 0, 1.0f);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    private void playGhostEatenSound() {
-        if (preferences.getBoolean(SOUND_ENABLED, true)) {
-            try {
-                soundPool.play(eatDotSound, 1.0f, 1.0f, 1, 0, 1.0f);
-            } catch (Exception e) {
-                e.printStackTrace();
             }
         }
     }
@@ -720,6 +731,158 @@ public class GameView extends SurfaceView implements Runnable {
                 ghost.resetPosition();
                 ghost.resetState();
             }
+        }
+    }
+
+    private void updateFruits() {
+        long currentTime = System.currentTimeMillis();
+        
+        // Spawn new fruit if needed
+        if (currentTime - lastFruitSpawnTime > FRUIT_SPAWN_INTERVAL && fruits.size() < MAX_FRUITS) {
+            spawnNewFruit();
+            lastFruitSpawnTime = currentTime;
+        }
+    }
+
+    private void spawnNewFruit() {
+        int attempts = 0;
+        int maxAttempts = 20;  // Zvýšený počet pokusov
+        
+        while (attempts < maxAttempts) {
+            int x = 1 + (int)(Math.random() * (maze.getColumns() - 2));
+            int y = 1 + (int)(Math.random() * (maze.getRows() - 2));
+            
+            // Kontrola či je políčko dostupné pre Pacmana
+            if (!maze.isWall(x, y) && isAccessibleFromPacman(x, y)) {
+                int fruitType = (int)(Math.random() * 4);
+                float pixelX = x * scaleFactor + scaleFactor/2;
+                float pixelY = y * scaleFactor + scaleFactor/2;
+                
+                fruits.add(new Fruit(context, pixelX, pixelY, scaleFactor, fruitType));
+                break;
+            }
+            attempts++;
+        }
+    }
+
+    private boolean isAccessibleFromPacman(int x, int y) {
+        // Jednoduchý flood fill algoritmus pre kontrolu dostupnosti
+        boolean[][] visited = new boolean[maze.getColumns()][maze.getRows()];
+        return checkAccessibility(pacman.getGridX(), pacman.getGridY(), x, y, visited);
+    }
+
+    private boolean checkAccessibility(int startX, int startY, int targetX, int targetY, boolean[][] visited) {
+        // Ak sme mimo bludiska alebo na stene alebo už navštívené, vráť false
+        if (startX < 0 || startX >= maze.getColumns() || 
+            startY < 0 || startY >= maze.getRows() ||
+            maze.isWall(startX, startY) || visited[startX][startY]) {
+            return false;
+        }
+
+        // Ak sme našli cieľ, vráť true
+        if (startX == targetX && startY == targetY) {
+            return true;
+        }
+
+        // Označ ako navštívené
+        visited[startX][startY] = true;
+
+        // Skontroluj všetky smery
+        return checkAccessibility(startX + 1, startY, targetX, targetY, visited) ||
+               checkAccessibility(startX - 1, startY, targetX, targetY, visited) ||
+               checkAccessibility(startX, startY + 1, targetX, targetY, visited) ||
+               checkAccessibility(startX, startY - 1, targetX, targetY, visited);
+    }
+
+    private void checkFruitCollisions() {
+        Iterator<Fruit> iterator = fruits.iterator();
+        while (iterator.hasNext()) {
+            Fruit fruit = iterator.next();
+            if (RectF.intersects(pacman.getBounds(), fruit.getBounds())) {
+                // Aplikuj boost podľa typu ovocia
+                applyFruitBoost(fruit);
+                score += fruit.getPoints();
+                iterator.remove();
+            }
+        }
+    }
+
+    private void applyFruitBoost(Fruit fruit) {
+        long currentTime = System.currentTimeMillis();
+        boostEndTime = currentTime + fruit.getBoostDuration();
+        boostMessageEndTime = currentTime + MESSAGE_DURATION;
+        
+        switch (fruit.getBoostType()) {
+            case 0: // Speed boost
+                hasSpeedBoost = true;
+                pacman.setSpeedMultiplier(1.5f);
+                currentBoostMessage = "Speed Boost!";
+                break;
+            case 1: // Invincibility
+                hasInvincibility = true;
+                currentBoostMessage = "Invincibility!";
+                break;
+            case 2: // Extra life
+                lives++;
+                currentBoostMessage = "Extra Life!";
+                break;
+            case 3: // Double points
+                hasDoublePoints = true;
+                currentBoostMessage = "Double Points!";
+                break;
+        }
+    }
+
+    private void checkBoosts() {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime > boostEndTime) {
+            // Reset all boosts
+            if (hasSpeedBoost) {
+                hasSpeedBoost = false;
+                pacman.setSpeedMultiplier(1.0f);
+            }
+            hasInvincibility = false;
+            hasDoublePoints = false;
+        }
+    }
+
+    private void drawLives() {
+        String livesText = "Lives: " + lives;
+        canvas.drawText(livesText, 20, 100, scorePaint); // Posunuté nižšie pod skóre
+    }
+
+    public void toggleBackgroundMusic() {
+        if (backgroundMusic != null) {
+            if (backgroundMusic.isPlaying()) {
+                backgroundMusic.pause();
+                preferences.edit().putBoolean(SOUND_ENABLED, false).apply();
+            } else {
+                backgroundMusic.start();
+                preferences.edit().putBoolean(SOUND_ENABLED, true).apply();
+            }
+        }
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        if (backgroundMusic != null && backgroundMusic.isPlaying()) {
+            backgroundMusic.pause();
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (backgroundMusic != null && preferences.getBoolean(SOUND_ENABLED, true)) {
+            backgroundMusic.start();
+        }
+    }
+
+    public void cleanup() {
+        if (backgroundMusic != null) {
+            backgroundMusic.release();
+            backgroundMusic = null;
         }
     }
 }
